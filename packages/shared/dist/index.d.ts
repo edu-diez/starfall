@@ -36,4 +36,38 @@ export declare const GAME_CONFIG: {
 };
 export declare const COLORS: readonly ["#FF0000", "#0000FF", "#00FF00", "#FFD700", "#FF69B4", "#FFA500", "#800080", "#00FFFF", "#FFFFFF", "#8B4513"];
 export type Color = (typeof COLORS)[number];
+export declare const MESSAGE_TYPES: {
+    readonly JOIN: "join";
+    readonly LEAVE: "leave";
+    readonly MOVE: "move";
+    readonly WELCOME: "welcome";
+    readonly PLAYER_JOINED: "playerJoined";
+    readonly PLAYER_LEFT: "playerLeft";
+    readonly ERROR: "error";
+};
+export type MessageType = (typeof MESSAGE_TYPES)[keyof typeof MESSAGE_TYPES];
+export interface MoveMessage {
+    direction: Vec2;
+    timestamp: number;
+}
+export interface JoinMessage {
+    name?: string;
+}
+export interface WelcomeMessage {
+    sessionId: string;
+    playerId: string;
+    color: Color;
+    phase: GamePhase;
+}
+export interface PlayerJoinedMessage {
+    sessionId: string;
+    name: string;
+    color: Color;
+}
+export interface PlayerLeftMessage {
+    sessionId: string;
+}
+export interface ErrorMessage {
+    message: string;
+}
 //# sourceMappingURL=index.d.ts.map

@@ -56,3 +56,46 @@ export const COLORS = [
 ] as const;
 
 export type Color = (typeof COLORS)[number];
+
+// Network message types
+export const MESSAGE_TYPES = {
+  JOIN: "join",
+  LEAVE: "leave",
+  MOVE: "move",
+  WELCOME: "welcome",
+  PLAYER_JOINED: "playerJoined",
+  PLAYER_LEFT: "playerLeft",
+  ERROR: "error",
+} as const;
+
+export type MessageType = (typeof MESSAGE_TYPES)[keyof typeof MESSAGE_TYPES];
+
+export interface MoveMessage {
+  direction: Vec2;
+  timestamp: number;
+}
+
+export interface JoinMessage {
+  name?: string;
+}
+
+export interface WelcomeMessage {
+  sessionId: string;
+  playerId: string;
+  color: Color;
+  phase: GamePhase;
+}
+
+export interface PlayerJoinedMessage {
+  sessionId: string;
+  name: string;
+  color: Color;
+}
+
+export interface PlayerLeftMessage {
+  sessionId: string;
+}
+
+export interface ErrorMessage {
+  message: string;
+}

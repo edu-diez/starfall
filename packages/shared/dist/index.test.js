@@ -34,4 +34,53 @@ const index_1 = require("../src/index");
         (0, vitest_1.expect)(vec.x).toBe(10);
         (0, vitest_1.expect)(vec.y).toBe(20);
     });
+    (0, vitest_1.it)("exports MESSAGE_TYPES constants", () => {
+        (0, vitest_1.expect)(index_1.MESSAGE_TYPES.JOIN).toBe("join");
+        (0, vitest_1.expect)(index_1.MESSAGE_TYPES.LEAVE).toBe("leave");
+        (0, vitest_1.expect)(index_1.MESSAGE_TYPES.MOVE).toBe("move");
+        (0, vitest_1.expect)(index_1.MESSAGE_TYPES.WELCOME).toBe("welcome");
+        (0, vitest_1.expect)(index_1.MESSAGE_TYPES.PLAYER_JOINED).toBe("playerJoined");
+        (0, vitest_1.expect)(index_1.MESSAGE_TYPES.PLAYER_LEFT).toBe("playerLeft");
+        (0, vitest_1.expect)(index_1.MESSAGE_TYPES.ERROR).toBe("error");
+    });
+    (0, vitest_1.it)("MoveMessage type works correctly", () => {
+        const msg = {
+            direction: { x: 1, y: 0 },
+            timestamp: Date.now(),
+        };
+        (0, vitest_1.expect)(msg.direction.x).toBe(1);
+        (0, vitest_1.expect)(msg.direction.y).toBe(0);
+        (0, vitest_1.expect)(typeof msg.timestamp).toBe("number");
+    });
+    (0, vitest_1.it)("JoinMessage type works correctly", () => {
+        const msg = { name: "TestPlayer" };
+        (0, vitest_1.expect)(msg.name).toBe("TestPlayer");
+    });
+    (0, vitest_1.it)("WelcomeMessage type works correctly", () => {
+        const msg = {
+            sessionId: "session-1",
+            playerId: "player-1",
+            color: "#FF0000",
+            phase: index_1.GamePhase.Lobby,
+        };
+        (0, vitest_1.expect)(msg.sessionId).toBe("session-1");
+        (0, vitest_1.expect)(msg.color).toBe("#FF0000");
+        (0, vitest_1.expect)(msg.phase).toBe(index_1.GamePhase.Lobby);
+    });
+    (0, vitest_1.it)("PlayerJoinedMessage type works correctly", () => {
+        const msg = {
+            sessionId: "session-1",
+            name: "TestPlayer",
+            color: "#FF0000",
+        };
+        (0, vitest_1.expect)(msg.name).toBe("TestPlayer");
+    });
+    (0, vitest_1.it)("PlayerLeftMessage type works correctly", () => {
+        const msg = { sessionId: "session-1" };
+        (0, vitest_1.expect)(msg.sessionId).toBe("session-1");
+    });
+    (0, vitest_1.it)("ErrorMessage type works correctly", () => {
+        const msg = { message: "Room is full" };
+        (0, vitest_1.expect)(msg.message).toBe("Room is full");
+    });
 });

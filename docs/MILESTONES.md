@@ -1408,19 +1408,19 @@ Update this section as work progresses.
 
 ```text
 M0  Repository and toolchain foundation                COMPLETED
-M1  Connection, spawning, and authoritative movement  NOT STARTED
+M1  Connection, spawning, and authoritative movement   COMPLETED
 M2  Lobby, unique colors, and ready flow               NOT STARTED
 M3  Match lifecycle and private role assignment        NOT STARTED
 M4  Map boundaries and collision                       NOT STARTED
 M5  Kill system, elimination, and basic victory        NOT STARTED
 M6  Emergency meetings and discussion phase            NOT STARTED
-M7  Voting, ejection, and complete victory flow         NOT STARTED
-M8  Vent network and Killer traversal                   NOT STARTED
-M9  Mobile controls and responsive UI                   NOT STARTED
-M10 Accounts and persistence                            NOT STARTED
-M11 Reconnection and resilience                         NOT STARTED
-M12 Networking polish and gameplay presentation         NOT STARTED
-M13 Full-match hardening and release candidate          NOT STARTED
+M7  Voting, ejection, and complete victory flow        NOT STARTED
+M8  Vent network and Killer traversal                  NOT STARTED
+M9  Mobile controls and responsive UI                  NOT STARTED
+M10 Accounts and persistence                           NOT STARTED
+M11 Reconnection and resilience                        NOT STARTED
+M12 Networking polish and gameplay presentation        NOT STARTED
+M13 Full-match hardening and release candidate         NOT STARTED
 ```
 
 Allowed status values:

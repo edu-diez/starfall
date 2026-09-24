@@ -1,5 +1,11 @@
 import { Schema, MapSchema, type, ArraySchema } from "@colyseus/schema";
-import { PlayerRole, PlayerState, GamePhase, Vec2, type Color } from "@starfall/shared";
+import {
+  PlayerRole,
+  PlayerState,
+  GamePhase,
+  Vec2,
+  type Color,
+} from "@starfall/shared";
 
 export class Player extends Schema {
   @type("string") sessionId: string = "";

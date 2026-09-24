@@ -1,5 +1,19 @@
 import { describe, it, expect } from "vitest";
-import { PlayerRole, PlayerState, GamePhase, GAME_CONFIG, COLORS, Vec2 } from "../src/index";
+import {
+  PlayerRole,
+  PlayerState,
+  GamePhase,
+  GAME_CONFIG,
+  COLORS,
+  Vec2,
+  MESSAGE_TYPES,
+  MoveMessage,
+  JoinMessage,
+  WelcomeMessage,
+  PlayerJoinedMessage,
+  PlayerLeftMessage,
+  ErrorMessage,
+} from "../src/index";
 
 describe("Shared package", () => {
   it("exports PlayerRole enum", () => {
@@ -37,5 +51,61 @@ describe("Shared package", () => {
     const vec: Vec2 = { x: 10, y: 20 };
     expect(vec.x).toBe(10);
     expect(vec.y).toBe(20);
+  });
+
+  it("exports MESSAGE_TYPES constants", () => {
+    expect(MESSAGE_TYPES.JOIN).toBe("join");
+    expect(MESSAGE_TYPES.LEAVE).toBe("leave");
+    expect(MESSAGE_TYPES.MOVE).toBe("move");
+    expect(MESSAGE_TYPES.WELCOME).toBe("welcome");
+    expect(MESSAGE_TYPES.PLAYER_JOINED).toBe("playerJoined");
+    expect(MESSAGE_TYPES.PLAYER_LEFT).toBe("playerLeft");
+    expect(MESSAGE_TYPES.ERROR).toBe("error");
+  });
+
+  it("MoveMessage type works correctly", () => {
+    const msg: MoveMessage = {
+      direction: { x: 1, y: 0 },
+      timestamp: Date.now(),
+    };
+    expect(msg.direction.x).toBe(1);
+    expect(msg.direction.y).toBe(0);
+    expect(typeof msg.timestamp).toBe("number");
+  });
+
+  it("JoinMessage type works correctly", () => {
+    const msg: JoinMessage = { name: "TestPlayer" };
+    expect(msg.name).toBe("TestPlayer");
+  });
+
+  it("WelcomeMessage type works correctly", () => {
+    const msg: WelcomeMessage = {
+      sessionId: "session-1",
+      playerId: "player-1",
+      color: "#FF0000",
+      phase: GamePhase.Lobby,
+    };
+    expect(msg.sessionId).toBe("session-1");
+    expect(msg.color).toBe("#FF0000");
+    expect(msg.phase).toBe(GamePhase.Lobby);
+  });
+
+  it("PlayerJoinedMessage type works correctly", () => {
+    const msg: PlayerJoinedMessage = {
+      sessionId: "session-1",
+      name: "TestPlayer",
+      color: "#FF0000",
+    };
+    expect(msg.name).toBe("TestPlayer");
+  });
+
+  it("PlayerLeftMessage type works correctly", () => {
+    const msg: PlayerLeftMessage = { sessionId: "session-1" };
+    expect(msg.sessionId).toBe("session-1");
+  });
+
+  it("ErrorMessage type works correctly", () => {
+    const msg: ErrorMessage = { message: "Room is full" };
+    expect(msg.message).toBe("Room is full");
   });
 });

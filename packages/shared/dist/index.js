@@ -1,7 +1,7 @@
 "use strict";
 // Shared types and constants for the game
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.COLORS = exports.GAME_CONFIG = exports.GamePhase = exports.PlayerState = exports.PlayerRole = void 0;
+exports.MESSAGE_TYPES = exports.COLORS = exports.GAME_CONFIG = exports.GamePhase = exports.PlayerState = exports.PlayerRole = void 0;
 var PlayerRole;
 (function (PlayerRole) {
     PlayerRole["Crewmate"] = "crewmate";
@@ -45,3 +45,13 @@ exports.COLORS = [
     "#FFFFFF", // White
     "#8B4513", // Brown
 ];
+// Network message types
+exports.MESSAGE_TYPES = {
+    JOIN: "join",
+    LEAVE: "leave",
+    MOVE: "move",
+    WELCOME: "welcome",
+    PLAYER_JOINED: "playerJoined",
+    PLAYER_LEFT: "playerLeft",
+    ERROR: "error",
+};

@@ -1,5 +1,14 @@
 import { Client, Room } from "colyseus.js";
-import { GamePhase, PlayerRole, PlayerState, Color, GAME_CONFIG } from "@starfall/shared";
+import {
+  GamePhase,
+  PlayerRole,
+  PlayerState,
+  Color,
+  GAME_CONFIG,
+  Vec2,
+  MESSAGE_TYPES,
+  MoveMessage,
+} from "@starfall/shared";
 
 // Types for Colyseus room state
 interface PlayerData {
@@ -36,6 +45,12 @@ class GameClient {
   private myColor: Color = "#FF0000";
   private animationFrameId: number | null = null;
 
+  // Input state
+  private keysPressed = new Set<string>();
+  private lastSentInput: Vec2 = { x: 0, y: 0 };
+  private inputSendInterval: number | null = null;
+  private readonly INPUT_SEND_RATE = 60; // Hz - match server tick rate
+
   constructor() {
     this.client = new Client("ws://localhost:2567");
     this.canvas = document.getElementById("game-canvas") as HTMLCanvasElement;
@@ -43,7 +58,9 @@ class GameClient {
     this.connectionStatus = document.getElementById("connection-status")!;
     this.lobbyUI = document.getElementById("lobby-ui")!;
     this.joinBtn = document.getElementById("join-btn") as HTMLButtonElement;
-    this.playerNameInput = document.getElementById("player-name") as HTMLInputElement;
+    this.playerNameInput = document.getElementById(
+      "player-name",
+    ) as HTMLInputElement;
     this.playersContainer = document.getElementById("players-container")!;
     this.playersList = document.getElementById("players-list")!;
 
@@ -69,7 +86,7 @@ class GameClient {
     this.joinBtn.addEventListener("click", () => {
       const name = this.playerNameInput.value.trim();
       if (name && this.room) {
-        this.room.send("join", { name });
+        this.room.send(MESSAGE_TYPES.JOIN, { name });
         this.joinBtn.disabled = true;
         this.playerNameInput.disabled = true;
       }
@@ -80,6 +97,57 @@ class GameClient {
         this.joinBtn.click();
       }
     });
+
+    // Keyboard input for movement
+    window.addEventListener("keydown", (e) => this.handleKeyDown(e));
+    window.addEventListener("keyup", (e) => this.handleKeyUp(e));
+  }
+
+  private handleKeyDown(e: KeyboardEvent) {
+    // Prevent default for game keys
+    if (
+      [
+        "ArrowUp",
+        "ArrowDown",
+        "ArrowLeft",
+        "ArrowRight",
+        "w",
+        "a",
+        "s",
+        "d",
+        "W",
+        "A",
+        "S",
+        "D",
+      ].includes(e.key)
+    ) {
+      e.preventDefault();
+    }
+    this.keysPressed.add(e.key.toLowerCase());
+  }
+
+  private handleKeyUp(e: KeyboardEvent) {
+    this.keysPressed.delete(e.key.toLowerCase());
+  }
+
+  private getInputDirection(): Vec2 {
+    let x = 0;
+    let y = 0;
+
+    if (this.keysPressed.has("arrowup") || this.keysPressed.has("w")) {
+      y -= 1;
+    }
+    if (this.keysPressed.has("arrowdown") || this.keysPressed.has("s")) {
+      y += 1;
+    }
+    if (this.keysPressed.has("arrowleft") || this.keysPressed.has("a")) {
+      x -= 1;
+    }
+    if (this.keysPressed.has("arrowright") || this.keysPressed.has("d")) {
+      x += 1;
+    }
+
+    return { x, y };
   }
 
   private async connect() {
@@ -101,21 +169,27 @@ class GameClient {
       this.renderPlayersList(state.players);
     });
 
-    this.room.onMessage("welcome", (message) => {
+    this.room.onMessage(MESSAGE_TYPES.WELCOME, (message) => {
       this.mySessionId = message.sessionId;
       this.myColor = message.color;
       console.log("Welcome:", message);
+
+      // Hide lobby UI and start input sending when joined
+      if (message.phase === GamePhase.Playing) {
+        this.lobbyUI.classList.add("hidden");
+        this.startInputSending();
+      }
     });
 
-    this.room.onMessage("playerJoined", (message) => {
+    this.room.onMessage(MESSAGE_TYPES.PLAYER_JOINED, (message) => {
       console.log("Player joined:", message);
     });
 
-    this.room.onMessage("playerLeft", (message) => {
+    this.room.onMessage(MESSAGE_TYPES.PLAYER_LEFT, (message) => {
       console.log("Player left:", message);
     });
 
-    this.room.onMessage("error", (message) => {
+    this.room.onMessage(MESSAGE_TYPES.ERROR, (message) => {
       console.error("Server error:", message);
       this.updateConnectionStatus(`Error: ${message.message}`, "status-error");
       this.joinBtn.disabled = false;
@@ -126,12 +200,51 @@ class GameClient {
       console.log("Left room:", code);
       this.updateConnectionStatus("Disconnected", "status-disconnected");
       this.lobbyUI.classList.remove("hidden");
+      this.stopInputSending();
     });
 
     this.room.onError((code, message) => {
       console.error("Room error:", code, message);
       this.updateConnectionStatus(`Error: ${message}`, "status-error");
     });
+  }
+
+  private startInputSending() {
+    if (this.inputSendInterval) return;
+
+    this.inputSendInterval = window.setInterval(() => {
+      this.sendMovementInput();
+    }, 1000 / this.INPUT_SEND_RATE);
+  }
+
+  private stopInputSending() {
+    if (this.inputSendInterval) {
+      clearInterval(this.inputSendInterval);
+      this.inputSendInterval = null;
+    }
+  }
+
+  private sendMovementInput() {
+    if (!this.room || !this.mySessionId) return;
+
+    const direction = this.getInputDirection();
+
+    // Only send if input changed (optimization)
+    if (
+      direction.x === this.lastSentInput.x &&
+      direction.y === this.lastSentInput.y
+    ) {
+      return;
+    }
+
+    this.lastSentInput = direction;
+
+    const message: MoveMessage = {
+      direction,
+      timestamp: Date.now(),
+    };
+
+    this.room.send(MESSAGE_TYPES.MOVE, message);
   }
 
   private updateConnectionStatus(text: string, className: string) {
@@ -149,7 +262,7 @@ class GameClient {
       div.innerHTML = `
         <div class="player-color" style="background: ${player.color}"></div>
         <span class="player-name">${player.name}</span>
-        ${sessionId === this.mySessionId ? '<span class="player-you">You</span>' : ''}
+        ${sessionId === this.mySessionId ? '<span class="player-you">You</span>' : ""}
       `;
       this.playersContainer.appendChild(div);
     });
@@ -162,7 +275,7 @@ class GameClient {
   private gameLoop = () => {
     this.render();
     this.animationFrameId = requestAnimationFrame(this.gameLoop);
-  }
+  };
 
   private render() {
     // Clear canvas
@@ -205,7 +318,8 @@ class GameClient {
 
     const screenX = (player.x / GAME_CONFIG.MAP_WIDTH) * this.canvas.width;
     const screenY = (player.y / GAME_CONFIG.MAP_HEIGHT) * this.canvas.height;
-    const radius = (GAME_CONFIG.PLAYER_RADIUS / GAME_CONFIG.MAP_WIDTH) * this.canvas.width;
+    const radius =
+      (GAME_CONFIG.PLAYER_RADIUS / GAME_CONFIG.MAP_WIDTH) * this.canvas.width;
 
     this.ctx.beginPath();
     this.ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
