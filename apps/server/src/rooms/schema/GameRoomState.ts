@@ -16,6 +16,7 @@ export class Player extends Schema {
   @type("number") x: number = 0;
   @type("number") y: number = 0;
   @type("number") lastInputTimestamp: number = 0;
+  @type("boolean") ready: boolean = false;
 }
 
 export class GameRoomState extends Schema {

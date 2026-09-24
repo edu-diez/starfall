@@ -53,6 +53,17 @@ export const COLORS = [
   "#00FFFF", // Cyan
   "#FFFFFF", // White
   "#8B4513", // Brown
+  "#FF4500", // OrangeRed
+  "#32CD32", // LimeGreen
+  "#1E90FF", // DodgerBlue
+  "#FF1493", // DeepPink
+  "#FF8C00", // DarkOrange
+  "#9932CC", // DarkOrchid
+  "#00CED1", // DarkTurquoise
+  "#ADFF2F", // GreenYellow
+  "#FF6347", // Tomato
+  "#40E0D0", // Turquoise
+  "#DA70D6", // Orchid
 ] as const;
 
 export type Color = (typeof COLORS)[number];
@@ -66,6 +77,9 @@ export const MESSAGE_TYPES = {
   PLAYER_JOINED: "playerJoined",
   PLAYER_LEFT: "playerLeft",
   ERROR: "error",
+  COLOR_CHANGE: "colorChange",
+  READY: "ready",
+  LOBBY_STATE: "lobbyState",
 } as const;
 
 export type MessageType = (typeof MESSAGE_TYPES)[keyof typeof MESSAGE_TYPES];
@@ -98,4 +112,24 @@ export interface PlayerLeftMessage {
 
 export interface ErrorMessage {
   message: string;
+}
+
+export interface ColorChangeMessage {
+  color: Color;
+}
+
+export interface ReadyMessage {
+  ready: boolean;
+}
+
+export interface LobbyStateMessage {
+  players: Array<{
+    sessionId: string;
+    name: string;
+    color: Color;
+    ready: boolean;
+  }>;
+  minPlayers: number;
+  maxPlayers: number;
+  canStart: boolean;
 }

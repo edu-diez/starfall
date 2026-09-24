@@ -11,7 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GameRoomState = exports.Player = void 0;
 const schema_1 = require("@colyseus/schema");
-const shared_1 = require("@amongus/shared");
+const shared_1 = require("@starfall/shared");
 class Player extends schema_1.Schema {
     sessionId = "";
     name = "";
@@ -21,6 +21,7 @@ class Player extends schema_1.Schema {
     x = 0;
     y = 0;
     lastInputTimestamp = 0;
+    ready = false;
 }
 exports.Player = Player;
 __decorate([
@@ -55,6 +56,10 @@ __decorate([
     (0, schema_1.type)("number"),
     __metadata("design:type", Number)
 ], Player.prototype, "lastInputTimestamp", void 0);
+__decorate([
+    (0, schema_1.type)("boolean"),
+    __metadata("design:type", Boolean)
+], Player.prototype, "ready", void 0);
 class GameRoomState extends schema_1.Schema {
     players = new schema_1.MapSchema();
     phase = shared_1.GamePhase.Lobby;

@@ -41,10 +41,10 @@ describe("Shared package", () => {
     expect(GAME_CONFIG.MIN_PLAYERS).toBe(4);
   });
 
-  it("exports COLORS array with 10 colors", () => {
-    expect(COLORS.length).toBe(10);
+  it("exports COLORS array with 21 colors", () => {
+    expect(COLORS.length).toBe(21);
     expect(COLORS[0]).toBe("#FF0000");
-    expect(COLORS[9]).toBe("#8B4513");
+    expect(COLORS[20]).toBe("#DA70D6");
   });
 
   it("Vec2 type works correctly", () => {

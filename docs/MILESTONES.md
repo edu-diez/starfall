@@ -1409,7 +1409,7 @@ Update this section as work progresses.
 ```text
 M0  Repository and toolchain foundation                COMPLETED
 M1  Connection, spawning, and authoritative movement   COMPLETED
-M2  Lobby, unique colors, and ready flow               NOT STARTED
+M2  Lobby, unique colors, and ready flow               COMPLETED
 M3  Match lifecycle and private role assignment        NOT STARTED
 M4  Map boundaries and collision                       NOT STARTED
 M5  Kill system, elimination, and basic victory        NOT STARTED

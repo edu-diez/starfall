@@ -10,7 +10,12 @@ import {
   Color,
   MoveMessage,
   MESSAGE_TYPES,
+  ColorChangeMessage,
+  ReadyMessage,
+  LobbyStateMessage,
 } from "@starfall/shared";
+import { LobbySystem } from "../systems/LobbySystem";
+import { ColorSystem } from "../systems/ColorSystem";
 
 export class GameRoom extends Room<GameRoomState> {
   override maxClients = GAME_CONFIG.MAX_PLAYERS;
@@ -27,9 +32,17 @@ export class GameRoom extends Room<GameRoomState> {
     { direction: Vec2; timestamp: number }
   >();
 
+  // Lobby and color systems
+  private lobbySystem!: LobbySystem;
+  private colorSystem!: ColorSystem;
+
   override onCreate(options: any) {
     this.setState(new GameRoomState());
     this.state.phase = GamePhase.Lobby;
+
+    // Initialize systems
+    this.lobbySystem = new LobbySystem(this.state);
+    this.colorSystem = this.lobbySystem.getColorSystem();
 
     this.onMessage(MESSAGE_TYPES.JOIN, (client: Client, message: any) => {
       this.handleJoin(client, message);
@@ -43,6 +56,20 @@ export class GameRoom extends Room<GameRoomState> {
       MESSAGE_TYPES.MOVE,
       (client: Client, message: MoveMessage) => {
         this.handleMove(client, message);
+      },
+    );
+
+    this.onMessage(
+      MESSAGE_TYPES.COLOR_CHANGE,
+      (client: Client, message: ColorChangeMessage) => {
+        this.handleColorChange(client, message);
+      },
+    );
+
+    this.onMessage(
+      MESSAGE_TYPES.READY,
+      (client: Client, message: ReadyMessage) => {
+        this.handleReady(client, message);
       },
     );
 
@@ -123,31 +150,17 @@ export class GameRoom extends Room<GameRoomState> {
       return;
     }
 
-    // Check max players
-    if (this.state.players.size >= this.maxClients) {
-      client.send(MESSAGE_TYPES.ERROR, { message: "Room is full" });
+    // Check if can join (lobby phase and not full)
+    if (!this.lobbySystem.canJoin()) {
+      client.send(MESSAGE_TYPES.ERROR, { message: "Cannot join at this time" });
       return;
     }
 
-    // Assign a color
-    const usedColors = new Set<string>();
-    this.state.players.forEach((player) => usedColors.add(player.color));
-
-    let assignedColor: Color = "#FF0000";
-    for (const color of COLORS) {
-      if (!usedColors.has(color)) {
-        assignedColor = color;
-        break;
-      }
-    }
-
-    // Create player
-    const player = this.state.createPlayer(
+    // Handle player join through lobby system (assigns color)
+    const assignedColor = this.lobbySystem.handlePlayerJoin(
       client.sessionId,
       playerName,
-      assignedColor,
     );
-    this.state.players.set(client.sessionId, player);
 
     // Send welcome message with private role (will be assigned later)
     client.send(MESSAGE_TYPES.WELCOME, {
@@ -156,6 +169,9 @@ export class GameRoom extends Room<GameRoomState> {
       color: assignedColor,
       phase: this.state.phase,
     });
+
+    // Send current lobby state to the new player
+    client.send(MESSAGE_TYPES.LOBBY_STATE, this.lobbySystem.getLobbyState());
 
     // Broadcast player joined to others
     this.broadcast(
@@ -167,16 +183,24 @@ export class GameRoom extends Room<GameRoomState> {
       },
       { except: client },
     );
+
+    // Broadcast updated lobby state to all
+    this.broadcast(MESSAGE_TYPES.LOBBY_STATE, this.lobbySystem.getLobbyState());
   }
 
   private handleLeave(client: Client) {
     const player = this.state.players.get(client.sessionId);
     if (player) {
-      this.state.players.delete(client.sessionId);
+      this.lobbySystem.handlePlayerLeave(client.sessionId);
       this.playerInputs.delete(client.sessionId);
       this.broadcast(MESSAGE_TYPES.PLAYER_LEFT, {
         sessionId: client.sessionId,
       });
+
+      // Broadcast updated lobby state to all
+      if (this.lobbySystem.isInLobby()) {
+        this.broadcast(MESSAGE_TYPES.LOBBY_STATE, this.lobbySystem.getLobbyState());
+      }
     }
   }
 
@@ -214,5 +238,72 @@ export class GameRoom extends Room<GameRoomState> {
 
     // Store the validated input for the simulation loop
     this.playerInputs.set(client.sessionId, { direction, timestamp });
+  }
+
+  private handleColorChange(client: Client, message: ColorChangeMessage) {
+    // Only allow color changes in lobby phase
+    if (!this.lobbySystem.isInLobby()) {
+      client.send(MESSAGE_TYPES.ERROR, {
+        message: "Color changes only allowed in lobby",
+      });
+      return;
+    }
+
+    // Validate the player exists
+    const player = this.state.players.get(client.sessionId);
+    if (!player) {
+      return;
+    }
+
+    // Validate color is known
+    if (!COLORS.includes(message.color)) {
+      client.send(MESSAGE_TYPES.ERROR, {
+        message: "Unknown color",
+      });
+      return;
+    }
+
+    // Try to assign the color
+    const newColor = this.lobbySystem.handleColorChange(
+      client.sessionId,
+      message.color,
+    );
+
+    if (newColor) {
+      // Success - broadcast to all clients
+      this.broadcast(MESSAGE_TYPES.COLOR_CHANGE, {
+        sessionId: client.sessionId,
+        color: newColor,
+      });
+    } else {
+      // Failed - color already taken
+      client.send(MESSAGE_TYPES.ERROR, {
+        message: "Color already in use",
+      });
+    }
+  }
+
+  private handleReady(client: Client, message: ReadyMessage) {
+    // Only allow ready changes in lobby phase
+    if (!this.lobbySystem.isInLobby()) {
+      client.send(MESSAGE_TYPES.ERROR, {
+        message: "Ready changes only allowed in lobby",
+      });
+      return;
+    }
+
+    // Validate the player exists
+    const player = this.state.players.get(client.sessionId);
+    if (!player) {
+      return;
+    }
+
+    // Set ready status
+    const success = this.lobbySystem.setReady(client.sessionId, message.ready);
+
+    if (success) {
+      // Broadcast updated lobby state to all clients
+      this.broadcast(MESSAGE_TYPES.LOBBY_STATE, this.lobbySystem.getLobbyState());
+    }
   }
 }

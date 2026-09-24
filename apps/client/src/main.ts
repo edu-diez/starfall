@@ -8,6 +8,10 @@ import {
   Vec2,
   MESSAGE_TYPES,
   MoveMessage,
+  ColorChangeMessage,
+  ReadyMessage,
+  LobbyStateMessage,
+  COLORS,
 } from "@starfall/shared";
 
 // Types for Colyseus room state
@@ -20,6 +24,7 @@ interface PlayerData {
   x: number;
   y: number;
   lastInputTimestamp: number;
+  ready: boolean;
 }
 
 interface GameRoomState {
@@ -43,7 +48,11 @@ class GameClient {
   private playersList: HTMLElement;
   private mySessionId: string | null = null;
   private myColor: Color = "#FF0000";
+  private myReady: boolean = false;
   private animationFrameId: number | null = null;
+  private colorPickerUI: HTMLElement | null = null;
+  private readyBtn: HTMLButtonElement | null = null;
+  private startEligibilityEl: HTMLElement | null = null;
 
   // Input state
   private keysPressed = new Set<string>();
@@ -101,6 +110,165 @@ class GameClient {
     // Keyboard input for movement
     window.addEventListener("keydown", (e) => this.handleKeyDown(e));
     window.addEventListener("keyup", (e) => this.handleKeyUp(e));
+  }
+
+  private createColorPickerUI() {
+    if (this.colorPickerUI) return;
+
+    this.colorPickerUI = document.createElement("div");
+    this.colorPickerUI.id = "color-picker";
+    this.colorPickerUI.style.cssText = `
+      margin-top: 24px;
+      padding: 16px;
+      background: #1f2937;
+      border-radius: 8px;
+      border: 1px solid #374151;
+    `;
+
+    const colors = COLORS;
+    const colorButtons = colors.map((color) => {
+      const btn = document.createElement("button");
+      btn.style.cssText = `
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        border: 2px solid transparent;
+        background: ${color};
+        cursor: pointer;
+        margin: 4px;
+        transition: transform 0.1s, border-color 0.1s;
+      `;
+      btn.dataset.color = color;
+      btn.title = color;
+      btn.addEventListener("click", () => this.requestColorChange(color));
+      btn.addEventListener("mouseenter", () => {
+        btn.style.transform = "scale(1.1)";
+      });
+      btn.addEventListener("mouseleave", () => {
+        btn.style.transform = "scale(1)";
+      });
+      return btn;
+    });
+
+    this.colorPickerUI.innerHTML = `
+      <h3 style="margin-bottom: 12px; font-size: 14px; color: #9ca3af;">Choose Color</h3>
+      <div id="color-buttons" style="display: flex; flex-wrap: wrap; justify-content: center;"></div>
+    `;
+
+    const colorButtonsContainer =
+      this.colorPickerUI.querySelector("#color-buttons")!;
+    colorButtons.forEach((btn) => colorButtonsContainer.appendChild(btn));
+
+    // Insert after players list
+    this.playersList.appendChild(this.colorPickerUI);
+  }
+
+  private updateColorPickerUI(
+    availableColors: Map<string, { available: boolean; owner?: string }>,
+  ) {
+    if (!this.colorPickerUI) return;
+
+    const buttons =
+      this.colorPickerUI.querySelectorAll<HTMLButtonElement>(
+        "button[data-color]",
+      );
+    buttons.forEach((btn) => {
+      const color = btn.dataset.color!;
+      const availability = availableColors.get(color);
+      const isMyColor = color === this.myColor;
+
+      if (availability?.available || isMyColor) {
+        btn.style.borderColor = isMyColor ? "#3b82f6" : "transparent";
+        btn.style.opacity = "1";
+        btn.style.cursor = "pointer";
+        btn.disabled = false;
+      } else {
+        btn.style.borderColor = "#ef4444";
+        btn.style.opacity = "0.5";
+        btn.style.cursor = "not-allowed";
+        btn.disabled = true;
+      }
+
+      // Highlight my color
+      if (isMyColor) {
+        btn.style.boxShadow = "0 0 0 2px #3b82f6";
+      } else {
+        btn.style.boxShadow = "none";
+      }
+    });
+  }
+
+  private createReadyButton() {
+    if (this.readyBtn) return;
+
+    this.readyBtn = document.createElement("button");
+    this.readyBtn.id = "ready-btn";
+    this.readyBtn.textContent = "Ready";
+    this.readyBtn.style.cssText = `
+      width: 100%;
+      padding: 12px 24px;
+      background: #10b981;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 16px;
+      transition: background 0.2s;
+    `;
+    this.readyBtn.addEventListener("click", () => this.toggleReady());
+    this.readyBtn.addEventListener("mouseenter", () => {
+      this.readyBtn!.style.background = this.myReady ? "#ef4444" : "#059669";
+    });
+    this.readyBtn.addEventListener("mouseleave", () => {
+      this.readyBtn!.style.background = this.myReady ? "#dc2626" : "#10b981";
+    });
+
+    this.startEligibilityEl = document.createElement("div");
+    this.startEligibilityEl.id = "start-eligibility";
+    this.startEligibilityEl.style.cssText = `
+      margin-top: 12px;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      text-align: center;
+    `;
+
+    this.playersList.appendChild(this.readyBtn);
+    this.playersList.appendChild(this.startEligibilityEl);
+  }
+
+  private updateReadyButton(ready: boolean, canStart: boolean) {
+    this.myReady = ready;
+    if (!this.readyBtn || !this.startEligibilityEl) return;
+
+    this.readyBtn.textContent = ready ? "Unready" : "Ready";
+    this.readyBtn.style.background = ready ? "#dc2626" : "#10b981";
+
+    if (canStart) {
+      this.startEligibilityEl.textContent =
+        "All players ready - Game can start!";
+      this.startEligibilityEl.style.background = "rgba(16, 185, 129, 0.2)";
+      this.startEligibilityEl.style.color = "#10b981";
+    } else {
+      this.startEligibilityEl.textContent =
+        "Waiting for all players to ready up...";
+      this.startEligibilityEl.style.background = "rgba(245, 158, 11, 0.2)";
+      this.startEligibilityEl.style.color = "#f59e0b";
+    }
+  }
+
+  private requestColorChange(color: Color) {
+    if (!this.room) return;
+    const message: ColorChangeMessage = { color };
+    this.room.send(MESSAGE_TYPES.COLOR_CHANGE, message);
+  }
+
+  private toggleReady() {
+    if (!this.room) return;
+    const message: ReadyMessage = { ready: !this.myReady };
+    this.room.send(MESSAGE_TYPES.READY, message);
   }
 
   private handleKeyDown(e: KeyboardEvent) {
@@ -174,8 +342,12 @@ class GameClient {
       this.myColor = message.color;
       console.log("Welcome:", message);
 
-      // Hide lobby UI and start input sending when joined
-      if (message.phase === GamePhase.Playing) {
+      // Show lobby UI for lobby phase
+      if (message.phase === GamePhase.Lobby) {
+        this.lobbyUI.classList.remove("hidden");
+        this.createColorPickerUI();
+        this.createReadyButton();
+      } else if (message.phase === GamePhase.Playing) {
         this.lobbyUI.classList.add("hidden");
         this.startInputSending();
       }
@@ -187,6 +359,48 @@ class GameClient {
 
     this.room.onMessage(MESSAGE_TYPES.PLAYER_LEFT, (message) => {
       console.log("Player left:", message);
+    });
+
+    this.room.onMessage(
+      MESSAGE_TYPES.LOBBY_STATE,
+      (message: LobbyStateMessage) => {
+        console.log("Lobby state:", message);
+        // Update color picker with availability
+        const availability = new Map<
+          string,
+          { available: boolean; owner?: string }
+        >();
+        message.players.forEach((p) => {
+          availability.set(p.color, { available: false, owner: p.sessionId });
+        });
+        // Mark colors not in use as available
+        COLORS.forEach((color) => {
+          if (!availability.has(color)) {
+            availability.set(color, { available: true });
+          }
+        });
+        this.updateColorPickerUI(availability);
+        // Update ready button
+        const myPlayer = message.players.find(
+          (p) => p.sessionId === this.mySessionId,
+        );
+        if (myPlayer) {
+          this.updateReadyButton(myPlayer.ready, message.canStart);
+        }
+      },
+    );
+
+    this.room.onMessage(MESSAGE_TYPES.COLOR_CHANGE, (message) => {
+      console.log("Color changed:", message);
+      if (message.sessionId === this.mySessionId) {
+        this.myColor = message.color;
+      }
+      // The LOBBY_STATE message will follow with updated availability
+    });
+
+    this.room.onMessage(MESSAGE_TYPES.READY, (message) => {
+      console.log("Ready changed:", message);
+      // The LOBBY_STATE message will follow with updated ready status
     });
 
     this.room.onMessage(MESSAGE_TYPES.ERROR, (message) => {
@@ -263,6 +477,7 @@ class GameClient {
         <div class="player-color" style="background: ${player.color}"></div>
         <span class="player-name">${player.name}</span>
         ${sessionId === this.mySessionId ? '<span class="player-you">You</span>' : ""}
+        ${player.ready ? '<span class="player-ready" style="font-size: 12px; color: #10b981; background: rgba(16, 185, 129, 0.2); padding: 2px 6px; border-radius: 4px;">Ready</span>' : ""}
       `;
       this.playersContainer.appendChild(div);
     });

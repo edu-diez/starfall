@@ -1,5 +1,5 @@
 import { Schema, MapSchema } from "@colyseus/schema";
-import { PlayerRole, PlayerState, GamePhase, type Color } from "@amongus/shared";
+import { PlayerRole, PlayerState, GamePhase, type Color } from "@starfall/shared";
 export declare class Player extends Schema {
     sessionId: string;
     name: string;
@@ -9,6 +9,7 @@ export declare class Player extends Schema {
     x: number;
     y: number;
     lastInputTimestamp: number;
+    ready: boolean;
 }
 export declare class GameRoomState extends Schema {
     players: MapSchema<Player, string>;

@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const vitest_1 = require("vitest");
 const GameRoom_1 = require("./GameRoom");
 const GameRoomState_1 = require("./schema/GameRoomState");
-const shared_1 = require("@amongus/shared");
+const shared_1 = require("@starfall/shared");
 // Mock Colyseus Room and Client
 const mockClient = (sessionId) => ({
     sessionId,
@@ -56,15 +56,367 @@ const mockBroadcast = vitest_1.vi.fn();
     });
     (0, vitest_1.it)("rejects join when room is full", () => {
         mockRoom.onCreate({});
-        mockRoom.maxClients = 2;
-        const client1 = mockClient("client-1");
-        const client2 = mockClient("client-2");
-        const client3 = mockClient("client-3");
-        mockRoom.handleJoin(client1, { name: "Player1" });
-        mockRoom.handleJoin(client2, { name: "Player2" });
-        mockRoom.handleJoin(client3, { name: "Player3" });
-        (0, vitest_1.expect)(mockRoom.state.players.size).toBe(2);
-        (0, vitest_1.expect)(client3.send).toHaveBeenCalledWith("error", { message: "Room is full" });
+        // Use the actual max players from config (10)
+        // Fill up to max players
+        for (let i = 1; i <= shared_1.GAME_CONFIG.MAX_PLAYERS; i++) {
+            const client = mockClient(`client-${i}`);
+            mockRoom.handleJoin(client, { name: `Player${i}` });
+        }
+        // Try to add one more
+        const extraClient = mockClient("client-extra");
+        mockRoom.handleJoin(extraClient, { name: "ExtraPlayer" });
+        (0, vitest_1.expect)(mockRoom.state.players.size).toBe(shared_1.GAME_CONFIG.MAX_PLAYERS);
+        (0, vitest_1.expect)(extraClient.send).toHaveBeenCalledWith(shared_1.MESSAGE_TYPES.ERROR, {
+            message: "Cannot join at this time",
+        });
+    });
+    // Movement tests
+    (0, vitest_1.describe)("Movement System", () => {
+        (0, vitest_1.beforeEach)(() => {
+            mockRoom.onCreate({});
+            const client = mockClient("client-1");
+            mockRoom.handleJoin(client, { name: "TestPlayer" });
+            // Set phase to Playing for movement tests
+            mockRoom.state.phase = shared_1.GamePhase.Playing;
+        });
+        (0, vitest_1.it)("stores validated movement input", () => {
+            const client = mockClient("client-1");
+            const direction = { x: 1, y: 0 };
+            mockRoom.handleMove(client, { direction, timestamp: Date.now() });
+            const storedInput = mockRoom.playerInputs.get("client-1");
+            (0, vitest_1.expect)(storedInput).toBeDefined();
+            (0, vitest_1.expect)(storedInput?.direction.x).toBe(1);
+            (0, vitest_1.expect)(storedInput?.direction.y).toBe(0);
+        });
+        (0, vitest_1.it)("rejects non-finite input", () => {
+            const client = mockClient("client-1");
+            // Test NaN
+            mockRoom.handleMove(client, {
+                direction: { x: NaN, y: 0 },
+                timestamp: Date.now(),
+            });
+            (0, vitest_1.expect)(mockRoom.playerInputs.has("client-1")).toBe(false);
+            // Test Infinity
+            mockRoom.handleMove(client, {
+                direction: { x: Infinity, y: 0 },
+                timestamp: Date.now(),
+            });
+            (0, vitest_1.expect)(mockRoom.playerInputs.has("client-1")).toBe(false);
+            // Test non-finite timestamp
+            mockRoom.handleMove(client, {
+                direction: { x: 1, y: 0 },
+                timestamp: NaN,
+            });
+            (0, vitest_1.expect)(mockRoom.playerInputs.has("client-1")).toBe(false);
+        });
+        (0, vitest_1.it)("normalizes diagonal input to unit vector", () => {
+            const client = mockClient("client-1");
+            // Diagonal input with magnitude > 1
+            const direction = { x: 1, y: 1 };
+            mockRoom.handleMove(client, { direction, timestamp: Date.now() });
+            const storedInput = mockRoom.playerInputs.get("client-1");
+            (0, vitest_1.expect)(storedInput).toBeDefined();
+            // Should be normalized to unit vector
+            const magnitude = Math.sqrt(storedInput.direction.x ** 2 + storedInput.direction.y ** 2);
+            (0, vitest_1.expect)(magnitude).toBeCloseTo(1, 5);
+        });
+        (0, vitest_1.it)("does not accept movement from unknown player", () => {
+            const client = mockClient("unknown-client");
+            const direction = { x: 1, y: 0 };
+            mockRoom.handleMove(client, { direction, timestamp: Date.now() });
+            (0, vitest_1.expect)(mockRoom.playerInputs.has("unknown-client")).toBe(false);
+        });
+        (0, vitest_1.it)("does not accept movement from dead player", () => {
+            const client = mockClient("client-1");
+            const player = mockRoom.state.players.get("client-1");
+            if (player) {
+                player.state = shared_1.PlayerState.Dead;
+            }
+            const direction = { x: 1, y: 0 };
+            mockRoom.handleMove(client, { direction, timestamp: Date.now() });
+            (0, vitest_1.expect)(mockRoom.playerInputs.has("client-1")).toBe(false);
+        });
+        (0, vitest_1.it)("applies world boundaries during tick", () => {
+            const client = mockClient("client-1");
+            const player = mockRoom.state.players.get("client-1");
+            // Place player at left edge
+            if (player) {
+                player.x = shared_1.GAME_CONFIG.PLAYER_RADIUS;
+                player.y = shared_1.GAME_CONFIG.MAP_HEIGHT / 2;
+            }
+            // Try to move left (outside boundary)
+            const direction = { x: -1, y: 0 };
+            mockRoom.handleMove(client, { direction, timestamp: Date.now() });
+            // Simulate a tick with deltaTime = 1 second
+            mockRoom.lastTickTime = Date.now() - 1000;
+            mockRoom.tick();
+            // Player should not go past left boundary
+            (0, vitest_1.expect)(player?.x).toBeGreaterThanOrEqual(shared_1.GAME_CONFIG.PLAYER_RADIUS);
+        });
+        (0, vitest_1.it)("applies right boundary during tick", () => {
+            const client = mockClient("client-1");
+            const player = mockRoom.state.players.get("client-1");
+            // Place player at right edge
+            if (player) {
+                player.x = shared_1.GAME_CONFIG.MAP_WIDTH - shared_1.GAME_CONFIG.PLAYER_RADIUS;
+                player.y = shared_1.GAME_CONFIG.MAP_HEIGHT / 2;
+            }
+            // Try to move right (outside boundary)
+            const direction = { x: 1, y: 0 };
+            mockRoom.handleMove(client, { direction, timestamp: Date.now() });
+            // Simulate a tick with deltaTime = 1 second
+            mockRoom.lastTickTime = Date.now() - 1000;
+            mockRoom.tick();
+            // Player should not go past right boundary
+            (0, vitest_1.expect)(player?.x).toBeLessThanOrEqual(shared_1.GAME_CONFIG.MAP_WIDTH - shared_1.GAME_CONFIG.PLAYER_RADIUS);
+        });
+        (0, vitest_1.it)("applies top boundary during tick", () => {
+            const client = mockClient("client-1");
+            const player = mockRoom.state.players.get("client-1");
+            // Place player at top edge
+            if (player) {
+                player.x = shared_1.GAME_CONFIG.MAP_WIDTH / 2;
+                player.y = shared_1.GAME_CONFIG.PLAYER_RADIUS;
+            }
+            // Try to move up (outside boundary)
+            const direction = { x: 0, y: -1 };
+            mockRoom.handleMove(client, { direction, timestamp: Date.now() });
+            // Simulate a tick with deltaTime = 1 second
+            mockRoom.lastTickTime = Date.now() - 1000;
+            mockRoom.tick();
+            // Player should not go past top boundary
+            (0, vitest_1.expect)(player?.y).toBeGreaterThanOrEqual(shared_1.GAME_CONFIG.PLAYER_RADIUS);
+        });
+        (0, vitest_1.it)("applies bottom boundary during tick", () => {
+            const client = mockClient("client-1");
+            const player = mockRoom.state.players.get("client-1");
+            // Place player at bottom edge
+            if (player) {
+                player.x = shared_1.GAME_CONFIG.MAP_WIDTH / 2;
+                player.y = shared_1.GAME_CONFIG.MAP_HEIGHT - shared_1.GAME_CONFIG.PLAYER_RADIUS;
+            }
+            // Try to move down (outside boundary)
+            const direction = { x: 0, y: 1 };
+            mockRoom.handleMove(client, { direction, timestamp: Date.now() });
+            // Simulate a tick with deltaTime = 1 second
+            mockRoom.lastTickTime = Date.now() - 1000;
+            mockRoom.tick();
+            // Player should not go past bottom boundary
+            (0, vitest_1.expect)(player?.y).toBeLessThanOrEqual(shared_1.GAME_CONFIG.MAP_HEIGHT - shared_1.GAME_CONFIG.PLAYER_RADIUS);
+        });
+        (0, vitest_1.it)("movement distance is determined by server time and speed", () => {
+            const client = mockClient("client-1");
+            const player = mockRoom.state.players.get("client-1");
+            if (player) {
+                player.x = shared_1.GAME_CONFIG.MAP_WIDTH / 2;
+                player.y = shared_1.GAME_CONFIG.MAP_HEIGHT / 2;
+            }
+            // Move right at full speed
+            const direction = { x: 1, y: 0 };
+            mockRoom.handleMove(client, { direction, timestamp: Date.now() });
+            // Simulate a tick with deltaTime = 1 second
+            mockRoom.lastTickTime = Date.now() - 1000;
+            mockRoom.tick();
+            // Player should move exactly PLAYER_SPEED pixels in 1 second
+            const expectedX = shared_1.GAME_CONFIG.MAP_WIDTH / 2 + shared_1.GAME_CONFIG.PLAYER_SPEED;
+            (0, vitest_1.expect)(player?.x).toBeCloseTo(expectedX, 0);
+        });
+        (0, vitest_1.it)("does not simulate movement in Lobby phase", () => {
+            const client = mockClient("client-1");
+            const player = mockRoom.state.players.get("client-1");
+            if (player) {
+                player.x = shared_1.GAME_CONFIG.MAP_WIDTH / 2;
+                player.y = shared_1.GAME_CONFIG.MAP_HEIGHT / 2;
+            }
+            // Set phase to Lobby
+            mockRoom.state.phase = shared_1.GamePhase.Lobby;
+            const direction = { x: 1, y: 0 };
+            mockRoom.handleMove(client, { direction, timestamp: Date.now() });
+            // Simulate a tick
+            mockRoom.lastTickTime = Date.now() - 1000;
+            mockRoom.tick();
+            // Player should not move in Lobby phase
+            (0, vitest_1.expect)(player?.x).toBe(shared_1.GAME_CONFIG.MAP_WIDTH / 2);
+        });
+        (0, vitest_1.it)("clears player input on leave", () => {
+            const client = mockClient("client-1");
+            const direction = { x: 1, y: 0 };
+            mockRoom.handleMove(client, { direction, timestamp: Date.now() });
+            (0, vitest_1.expect)(mockRoom.playerInputs.has("client-1")).toBe(true);
+            mockRoom.handleLeave(client);
+            (0, vitest_1.expect)(mockRoom.playerInputs.has("client-1")).toBe(false);
+        });
+    });
+    // Lobby and Color System tests
+    (0, vitest_1.describe)("Lobby System", () => {
+        (0, vitest_1.beforeEach)(() => {
+            mockRoom.onCreate({});
+            const client = mockClient("client-1");
+            mockRoom.handleJoin(client, { name: "TestPlayer" });
+        });
+        (0, vitest_1.it)("initializes with Lobby phase", () => {
+            (0, vitest_1.expect)(mockRoom.state.phase).toBe(shared_1.GamePhase.Lobby);
+        });
+        (0, vitest_1.it)("assigns unique colors to joining players", () => {
+            const client1 = mockClient("client-1");
+            const client2 = mockClient("client-2");
+            const client3 = mockClient("client-3");
+            mockRoom.handleJoin(client1, { name: "Player1" });
+            mockRoom.handleJoin(client2, { name: "Player2" });
+            mockRoom.handleJoin(client3, { name: "Player3" });
+            const colors = new Set();
+            mockRoom.state.players.forEach((player) => colors.add(player.color));
+            (0, vitest_1.expect)(colors.size).toBe(3);
+        });
+        (0, vitest_1.it)("rejects join when not in lobby phase", () => {
+            mockRoom.state.phase = shared_1.GamePhase.Playing;
+            const client = mockClient("client-new");
+            mockRoom.handleJoin(client, { name: "NewPlayer" });
+            (0, vitest_1.expect)(mockRoom.state.players.size).toBe(1); // Original player only
+            (0, vitest_1.expect)(client.send).toHaveBeenCalledWith(shared_1.MESSAGE_TYPES.ERROR, {
+                message: "Cannot join at this time",
+            });
+        });
+        (0, vitest_1.it)("rejects join when room is full", () => {
+            // Fill up to max players
+            for (let i = 1; i <= shared_1.GAME_CONFIG.MAX_PLAYERS; i++) {
+                const client = mockClient(`client-${i}`);
+                mockRoom.handleJoin(client, { name: `Player${i}` });
+            }
+            // Try to add one more
+            const extraClient = mockClient("client-extra");
+            mockRoom.handleJoin(extraClient, { name: "ExtraPlayer" });
+            (0, vitest_1.expect)(mockRoom.state.players.size).toBe(shared_1.GAME_CONFIG.MAX_PLAYERS);
+            (0, vitest_1.expect)(extraClient.send).toHaveBeenCalledWith(shared_1.MESSAGE_TYPES.ERROR, {
+                message: "Cannot join at this time",
+            });
+        });
+        (0, vitest_1.it)("releases color when player leaves", () => {
+            const client1 = mockClient("client-1");
+            const client2 = mockClient("client-2");
+            mockRoom.handleJoin(client1, { name: "Player1" });
+            mockRoom.handleJoin(client2, { name: "Player2" });
+            const color1 = mockRoom.state.players.get("client-1")?.color;
+            const color2 = mockRoom.state.players.get("client-2")?.color;
+            mockRoom.handleLeave(client1);
+            // New player should be able to get the released color
+            const client3 = mockClient("client-3");
+            mockRoom.handleJoin(client3, { name: "Player3" });
+            const color3 = mockRoom.state.players.get("client-3")?.color;
+            (0, vitest_1.expect)(color3).toBe(color1); // Should get the released color
+        });
+    });
+    (0, vitest_1.describe)("Color System", () => {
+        (0, vitest_1.beforeEach)(() => {
+            mockRoom.onCreate({});
+            const client = mockClient("client-1");
+            mockRoom.handleJoin(client, { name: "TestPlayer" });
+        });
+        (0, vitest_1.it)("allows color change to available color in lobby", () => {
+            const client = mockClient("client-1");
+            const newColor = "#0000FF"; // Blue
+            mockRoom.handleColorChange(client, { color: newColor });
+            const player = mockRoom.state.players.get("client-1");
+            (0, vitest_1.expect)(player?.color).toBe(newColor);
+            (0, vitest_1.expect)(mockBroadcast).toHaveBeenCalledWith(shared_1.MESSAGE_TYPES.COLOR_CHANGE, {
+                sessionId: "client-1",
+                color: newColor,
+            });
+        });
+        (0, vitest_1.it)("rejects color change to already taken color", () => {
+            const client1 = mockClient("client-1");
+            const client2 = mockClient("client-2");
+            mockRoom.handleJoin(client1, { name: "Player1" });
+            mockRoom.handleJoin(client2, { name: "Player2" });
+            const color1 = mockRoom.state.players.get("client-1")?.color;
+            // Try to change client2's color to client1's color
+            mockRoom.handleColorChange(client2, { color: color1 });
+            const player2 = mockRoom.state.players.get("client-2");
+            (0, vitest_1.expect)(player2?.color).not.toBe(color1);
+            (0, vitest_1.expect)(client2.send).toHaveBeenCalledWith(shared_1.MESSAGE_TYPES.ERROR, {
+                message: "Color already in use",
+            });
+        });
+        (0, vitest_1.it)("rejects color change to unknown color", () => {
+            const client = mockClient("client-1");
+            const unknownColor = "#123456"; // Not in COLORS
+            mockRoom.handleColorChange(client, { color: unknownColor });
+            (0, vitest_1.expect)(client.send).toHaveBeenCalledWith(shared_1.MESSAGE_TYPES.ERROR, {
+                message: "Unknown color",
+            });
+        });
+        (0, vitest_1.it)("rejects color change when not in lobby", () => {
+            mockRoom.state.phase = shared_1.GamePhase.Playing;
+            const client = mockClient("client-1");
+            const newColor = "#0000FF";
+            mockRoom.handleColorChange(client, { color: newColor });
+            (0, vitest_1.expect)(client.send).toHaveBeenCalledWith(shared_1.MESSAGE_TYPES.ERROR, {
+                message: "Color changes only allowed in lobby",
+            });
+        });
+    });
+    (0, vitest_1.describe)("Ready System", () => {
+        (0, vitest_1.beforeEach)(() => {
+            mockRoom.onCreate({});
+            const client = mockClient("client-1");
+            mockRoom.handleJoin(client, { name: "TestPlayer" });
+        });
+        (0, vitest_1.it)("allows ready toggle in lobby", () => {
+            const client = mockClient("client-1");
+            mockRoom.handleReady(client, { ready: true });
+            const player = mockRoom.state.players.get("client-1");
+            (0, vitest_1.expect)(player?.ready).toBe(true);
+            (0, vitest_1.expect)(mockBroadcast).toHaveBeenCalledWith(shared_1.MESSAGE_TYPES.LOBBY_STATE, vitest_1.expect.any(Object));
+        });
+        (0, vitest_1.it)("allows unready toggle in lobby", () => {
+            const client = mockClient("client-1");
+            mockRoom.handleReady(client, { ready: true });
+            mockRoom.handleReady(client, { ready: false });
+            const player = mockRoom.state.players.get("client-1");
+            (0, vitest_1.expect)(player?.ready).toBe(false);
+        });
+        (0, vitest_1.it)("rejects ready change when not in lobby", () => {
+            mockRoom.state.phase = shared_1.GamePhase.Playing;
+            const client = mockClient("client-1");
+            mockRoom.handleReady(client, { ready: true });
+            (0, vitest_1.expect)(client.send).toHaveBeenCalledWith(shared_1.MESSAGE_TYPES.ERROR, {
+                message: "Ready changes only allowed in lobby",
+            });
+        });
+        (0, vitest_1.it)("calculates canStart correctly with minimum players and all ready", () => {
+            const client1 = mockClient("client-1");
+            const client2 = mockClient("client-2");
+            const client3 = mockClient("client-3");
+            const client4 = mockClient("client-4");
+            mockRoom.handleJoin(client1, { name: "Player1" });
+            mockRoom.handleJoin(client2, { name: "Player2" });
+            mockRoom.handleJoin(client3, { name: "Player3" });
+            mockRoom.handleJoin(client4, { name: "Player4" });
+            // Not all ready - should not be able to start
+            mockRoom.handleReady(client1, { ready: true });
+            mockRoom.handleReady(client2, { ready: true });
+            mockRoom.handleReady(client3, { ready: true });
+            // client4 not ready
+            const lobbyState = mockRoom.lobbySystem.getLobbyState();
+            (0, vitest_1.expect)(lobbyState.canStart).toBe(false);
+            // All ready - should be able to start
+            mockRoom.handleReady(client4, { ready: true });
+            const lobbyState2 = mockRoom.lobbySystem.getLobbyState();
+            (0, vitest_1.expect)(lobbyState2.canStart).toBe(true);
+        });
+        (0, vitest_1.it)("requires minimum players to start", () => {
+            const client1 = mockClient("client-1");
+            const client2 = mockClient("client-2");
+            const client3 = mockClient("client-3");
+            mockRoom.handleJoin(client1, { name: "Player1" });
+            mockRoom.handleJoin(client2, { name: "Player2" });
+            mockRoom.handleJoin(client3, { name: "Player3" });
+            mockRoom.handleReady(client1, { ready: true });
+            mockRoom.handleReady(client2, { ready: true });
+            mockRoom.handleReady(client3, { ready: true });
+            const lobbyState = mockRoom.lobbySystem.getLobbyState();
+            (0, vitest_1.expect)(lobbyState.canStart).toBe(false); // Only 3 players, need 4
+        });
     });
 });
 (0, vitest_1.describe)("GameRoomState", () => {

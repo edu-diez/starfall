@@ -34,7 +34,7 @@ export declare const GAME_CONFIG: {
     readonly MAX_PLAYERS: 10;
     readonly MIN_PLAYERS: 4;
 };
-export declare const COLORS: readonly ["#FF0000", "#0000FF", "#00FF00", "#FFD700", "#FF69B4", "#FFA500", "#800080", "#00FFFF", "#FFFFFF", "#8B4513"];
+export declare const COLORS: readonly ["#FF0000", "#0000FF", "#00FF00", "#FFD700", "#FF69B4", "#FFA500", "#800080", "#00FFFF", "#FFFFFF", "#8B4513", "#FF4500", "#32CD32", "#1E90FF", "#FF1493", "#FF8C00", "#9932CC", "#00CED1", "#ADFF2F", "#FF6347", "#40E0D0", "#DA70D6"];
 export type Color = (typeof COLORS)[number];
 export declare const MESSAGE_TYPES: {
     readonly JOIN: "join";
@@ -44,6 +44,9 @@ export declare const MESSAGE_TYPES: {
     readonly PLAYER_JOINED: "playerJoined";
     readonly PLAYER_LEFT: "playerLeft";
     readonly ERROR: "error";
+    readonly COLOR_CHANGE: "colorChange";
+    readonly READY: "ready";
+    readonly LOBBY_STATE: "lobbyState";
 };
 export type MessageType = (typeof MESSAGE_TYPES)[keyof typeof MESSAGE_TYPES];
 export interface MoveMessage {
@@ -69,5 +72,22 @@ export interface PlayerLeftMessage {
 }
 export interface ErrorMessage {
     message: string;
+}
+export interface ColorChangeMessage {
+    color: Color;
+}
+export interface ReadyMessage {
+    ready: boolean;
+}
+export interface LobbyStateMessage {
+    players: Array<{
+        sessionId: string;
+        name: string;
+        color: Color;
+        ready: boolean;
+    }>;
+    minPlayers: number;
+    maxPlayers: number;
+    canStart: boolean;
 }
 //# sourceMappingURL=index.d.ts.map

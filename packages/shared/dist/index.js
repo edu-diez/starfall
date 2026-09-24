@@ -44,6 +44,17 @@ exports.COLORS = [
     "#00FFFF", // Cyan
     "#FFFFFF", // White
     "#8B4513", // Brown
+    "#FF4500", // OrangeRed
+    "#32CD32", // LimeGreen
+    "#1E90FF", // DodgerBlue
+    "#FF1493", // DeepPink
+    "#FF8C00", // DarkOrange
+    "#9932CC", // DarkOrchid
+    "#00CED1", // DarkTurquoise
+    "#ADFF2F", // GreenYellow
+    "#FF6347", // Tomato
+    "#40E0D0", // Turquoise
+    "#DA70D6", // Orchid
 ];
 // Network message types
 exports.MESSAGE_TYPES = {
@@ -54,4 +65,7 @@ exports.MESSAGE_TYPES = {
     PLAYER_JOINED: "playerJoined",
     PLAYER_LEFT: "playerLeft",
     ERROR: "error",
+    COLOR_CHANGE: "colorChange",
+    READY: "ready",
+    LOBBY_STATE: "lobbyState",
 };
