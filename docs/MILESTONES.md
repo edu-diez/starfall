@@ -1407,7 +1407,7 @@ Do not use the decision register as a substitute for updating the authoritative 
 Update this section as work progresses.
 
 ```text
-M0  Repository and toolchain foundation                NOT STARTED
+M0  Repository and toolchain foundation                COMPLETED
 M1  Connection, spawning, and authoritative movement  NOT STARTED
 M2  Lobby, unique colors, and ready flow               NOT STARTED
 M3  Match lifecycle and private role assignment        NOT STARTED
