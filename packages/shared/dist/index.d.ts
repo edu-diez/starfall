@@ -51,6 +51,9 @@ export declare const MESSAGE_TYPES: {
     readonly LOBBY_STATE: "lobbyState";
     readonly MATCH_START: "matchStart";
     readonly ROLE_ASSIGNMENT: "roleAssignment";
+    readonly KILL: "kill";
+    readonly KILL_RESULT: "killResult";
+    readonly GAME_OVER: "gameOver";
 };
 export type MessageType = (typeof MESSAGE_TYPES)[keyof typeof MESSAGE_TYPES];
 export interface MoveMessage {
@@ -100,5 +103,18 @@ export interface MatchStartMessage {
 }
 export interface RoleAssignmentMessage {
     role: PlayerRole;
+}
+export interface KillMessage {
+    targetSessionId: string;
+}
+export interface KillResultMessage {
+    success: boolean;
+    reason?: string;
+    targetSessionId?: string;
+    cooldownRemaining?: number;
+}
+export interface GameOverMessage {
+    winner: PlayerRole | null;
+    reason: string;
 }
 //# sourceMappingURL=index.d.ts.map

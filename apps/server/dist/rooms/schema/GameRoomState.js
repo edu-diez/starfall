@@ -60,6 +60,8 @@ class GameRoomState extends schema_1.Schema {
     phase = shared_1.GamePhase.Lobby;
     matchStartTime = 0;
     meetingEndTime = 0;
+    winner = null;
+    endReason = null;
     createPlayer(sessionId, name, color) {
         const player = new Player();
         player.sessionId = sessionId;
@@ -89,3 +91,11 @@ __decorate([
     (0, schema_1.type)("number"),
     __metadata("design:type", Number)
 ], GameRoomState.prototype, "meetingEndTime", void 0);
+__decorate([
+    (0, schema_1.type)("string"),
+    __metadata("design:type", Object)
+], GameRoomState.prototype, "winner", void 0);
+__decorate([
+    (0, schema_1.type)("string"),
+    __metadata("design:type", Object)
+], GameRoomState.prototype, "endReason", void 0);

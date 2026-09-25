@@ -15,6 +15,8 @@ export declare class GameRoomState extends Schema {
     phase: GamePhase;
     matchStartTime: number;
     meetingEndTime: number;
+    winner: string | null;
+    endReason: string | null;
     createPlayer(sessionId: string, name: string, color: Color): Player;
 }
 //# sourceMappingURL=GameRoomState.d.ts.map

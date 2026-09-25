@@ -69,6 +69,8 @@ export class MatchLifecycleSystem {
     this.state.phase = GamePhase.Lobby;
     this.state.matchStartTime = 0;
     this.state.meetingEndTime = 0;
+    this.state.winner = null;
+    this.state.endReason = null;
 
     // Reset all players to alive and unready
     this.state.players.forEach((player) => {

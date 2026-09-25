@@ -15,12 +15,17 @@ import {
   LobbyStateMessage,
   MatchStartMessage,
   RoleAssignmentMessage,
+  KillMessage,
+  KillResultMessage,
+  GameOverMessage,
 } from "@starfall/shared";
 import { LobbySystem } from "../systems/LobbySystem";
 import { ColorSystem } from "../systems/ColorSystem";
 import { MatchLifecycleSystem } from "../systems/MatchLifecycleSystem";
 import { RoleAssignmentSystem, DefaultRandomSource } from "../systems/RoleAssignmentSystem";
 import { CollisionSystem } from "../systems/CollisionSystem";
+import { KillSystem, DefaultClock } from "../systems/KillSystem";
+import { VictorySystem } from "../systems/VictorySystem";
 
 export class GameRoom extends Room<GameRoomState> {
   override maxClients = GAME_CONFIG.MAX_PLAYERS;
@@ -43,6 +48,8 @@ export class GameRoom extends Room<GameRoomState> {
   private matchLifecycleSystem!: MatchLifecycleSystem;
   private roleAssignmentSystem!: RoleAssignmentSystem;
   private collisionSystem!: CollisionSystem;
+  private killSystem!: KillSystem;
+  private victorySystem!: VictorySystem;
 
   override onCreate(options: any) {
     this.setState(new GameRoomState());
@@ -54,6 +61,8 @@ export class GameRoom extends Room<GameRoomState> {
     this.matchLifecycleSystem = new MatchLifecycleSystem(this.state, this.lobbySystem);
     this.roleAssignmentSystem = new RoleAssignmentSystem(this.state, new DefaultRandomSource());
     this.collisionSystem = new CollisionSystem(this.state);
+    this.killSystem = new KillSystem(this.state, this.roleAssignmentSystem, new DefaultClock());
+    this.victorySystem = new VictorySystem(this.state, this.roleAssignmentSystem);
 
     this.onMessage(MESSAGE_TYPES.JOIN, (client: Client, message: any) => {
       this.handleJoin(client, message);
@@ -88,6 +97,13 @@ export class GameRoom extends Room<GameRoomState> {
       MESSAGE_TYPES.MATCH_START,
       (client: Client) => {
         this.handleMatchStart(client);
+      },
+    );
+
+    this.onMessage(
+      MESSAGE_TYPES.KILL,
+      (client: Client, message: KillMessage) => {
+        this.handleKill(client, message);
       },
     );
 
@@ -166,6 +182,12 @@ export class GameRoom extends Room<GameRoomState> {
         // If neither works, position stays the same (blocked by wall)
       }
     });
+
+    // Evaluate victory conditions after movement
+    this.victorySystem.evaluate();
+    if (this.victorySystem.isMatchEnded()) {
+      this.handleGameOver();
+    }
   }
 
   private handleJoin(client: Client, message: any) {
@@ -399,5 +421,60 @@ export class GameRoom extends Room<GameRoomState> {
 
     // Broadcast updated lobby state (now with Playing phase)
     this.broadcast(MESSAGE_TYPES.LOBBY_STATE, this.lobbySystem.getLobbyState());
+  }
+
+  private handleKill(client: Client, message: KillMessage) {
+    const killerSessionId = client.sessionId;
+
+    // Validate the killer exists and is alive
+    const killer = this.state.players.get(killerSessionId);
+    if (!killer || killer.state !== PlayerState.Alive) {
+      client.send(MESSAGE_TYPES.KILL_RESULT, {
+        success: false,
+        reason: "You are not alive",
+      } as KillResultMessage);
+      return;
+    }
+
+    // Attempt the kill
+    const result = this.killSystem.attemptKill(killerSessionId, message.targetSessionId);
+
+    // Send result to the killer
+    const cooldownRemaining = this.killSystem.getCooldownRemaining(killerSessionId);
+    client.send(MESSAGE_TYPES.KILL_RESULT, {
+      success: result.success,
+      reason: result.reason,
+      targetSessionId: message.targetSessionId,
+      cooldownRemaining,
+    } as KillResultMessage);
+
+    // If kill was successful, notify all clients about the elimination
+    if (result.success) {
+      this.broadcast(MESSAGE_TYPES.PLAYER_LEFT, {
+        sessionId: message.targetSessionId,
+      });
+
+      // Check for victory
+      this.victorySystem.evaluate();
+      if (this.victorySystem.isMatchEnded()) {
+        this.handleGameOver();
+      }
+    }
+  }
+
+  private handleGameOver() {
+    const winner = this.victorySystem.getWinner();
+    const reason = this.victorySystem.getEndReason();
+
+    // Update public state
+    this.state.winner = winner;
+    this.state.endReason = reason;
+
+    // Broadcast game over to all clients
+    const gameOverMessage: GameOverMessage = {
+      winner,
+      reason: reason || "Match ended",
+    };
+    this.broadcast(MESSAGE_TYPES.GAME_OVER, gameOverMessage);
   }
 }

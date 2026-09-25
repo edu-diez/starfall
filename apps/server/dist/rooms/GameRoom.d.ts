@@ -12,6 +12,8 @@ export declare class GameRoom extends Room<GameRoomState> {
     private matchLifecycleSystem;
     private roleAssignmentSystem;
     private collisionSystem;
+    private killSystem;
+    private victorySystem;
     onCreate(options: any): void;
     onJoin(client: Client, options: any): void;
     onLeave(client: Client, consented: boolean): void;
@@ -25,5 +27,7 @@ export declare class GameRoom extends Room<GameRoomState> {
     private handleColorChange;
     private handleReady;
     private handleMatchStart;
+    private handleKill;
+    private handleGameOver;
 }
 //# sourceMappingURL=GameRoom.d.ts.map

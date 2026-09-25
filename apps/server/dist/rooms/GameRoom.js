@@ -8,6 +8,8 @@ const LobbySystem_1 = require("../systems/LobbySystem");
 const MatchLifecycleSystem_1 = require("../systems/MatchLifecycleSystem");
 const RoleAssignmentSystem_1 = require("../systems/RoleAssignmentSystem");
 const CollisionSystem_1 = require("../systems/CollisionSystem");
+const KillSystem_1 = require("../systems/KillSystem");
+const VictorySystem_1 = require("../systems/VictorySystem");
 class GameRoom extends colyseus_1.Room {
     maxClients = shared_1.GAME_CONFIG.MAX_PLAYERS;
     // Fixed timestep for authoritative simulation (60 Hz)
@@ -23,6 +25,8 @@ class GameRoom extends colyseus_1.Room {
     matchLifecycleSystem;
     roleAssignmentSystem;
     collisionSystem;
+    killSystem;
+    victorySystem;
     onCreate(options) {
         this.setState(new GameRoomState_1.GameRoomState());
         this.state.phase = shared_1.GamePhase.Lobby;
@@ -32,6 +36,8 @@ class GameRoom extends colyseus_1.Room {
         this.matchLifecycleSystem = new MatchLifecycleSystem_1.MatchLifecycleSystem(this.state, this.lobbySystem);
         this.roleAssignmentSystem = new RoleAssignmentSystem_1.RoleAssignmentSystem(this.state, new RoleAssignmentSystem_1.DefaultRandomSource());
         this.collisionSystem = new CollisionSystem_1.CollisionSystem(this.state);
+        this.killSystem = new KillSystem_1.KillSystem(this.state, this.roleAssignmentSystem, new KillSystem_1.DefaultClock());
+        this.victorySystem = new VictorySystem_1.VictorySystem(this.state, this.roleAssignmentSystem);
         this.onMessage(shared_1.MESSAGE_TYPES.JOIN, (client, message) => {
             this.handleJoin(client, message);
         });
@@ -49,6 +55,9 @@ class GameRoom extends colyseus_1.Room {
         });
         this.onMessage(shared_1.MESSAGE_TYPES.MATCH_START, (client) => {
             this.handleMatchStart(client);
+        });
+        this.onMessage(shared_1.MESSAGE_TYPES.KILL, (client, message) => {
+            this.handleKill(client, message);
         });
         // Start the fixed-rate simulation loop
         this.startSimulationLoop();
@@ -116,6 +125,11 @@ class GameRoom extends colyseus_1.Room {
                 // If neither works, position stays the same (blocked by wall)
             }
         });
+        // Evaluate victory conditions after movement
+        this.victorySystem.evaluate();
+        if (this.victorySystem.isMatchEnded()) {
+            this.handleGameOver();
+        }
     }
     handleJoin(client, message) {
         const playerName = message?.name || `Player ${client.sessionId.slice(0, 4)}`;
@@ -302,6 +316,52 @@ class GameRoom extends colyseus_1.Room {
         this.matchLifecycleSystem.completeRoleAssignment();
         // Broadcast updated lobby state (now with Playing phase)
         this.broadcast(shared_1.MESSAGE_TYPES.LOBBY_STATE, this.lobbySystem.getLobbyState());
+    }
+    handleKill(client, message) {
+        const killerSessionId = client.sessionId;
+        // Validate the killer exists and is alive
+        const killer = this.state.players.get(killerSessionId);
+        if (!killer || killer.state !== shared_1.PlayerState.Alive) {
+            client.send(shared_1.MESSAGE_TYPES.KILL_RESULT, {
+                success: false,
+                reason: "You are not alive",
+            });
+            return;
+        }
+        // Attempt the kill
+        const result = this.killSystem.attemptKill(killerSessionId, message.targetSessionId);
+        // Send result to the killer
+        const cooldownRemaining = this.killSystem.getCooldownRemaining(killerSessionId);
+        client.send(shared_1.MESSAGE_TYPES.KILL_RESULT, {
+            success: result.success,
+            reason: result.reason,
+            targetSessionId: message.targetSessionId,
+            cooldownRemaining,
+        });
+        // If kill was successful, notify all clients about the elimination
+        if (result.success) {
+            this.broadcast(shared_1.MESSAGE_TYPES.PLAYER_LEFT, {
+                sessionId: message.targetSessionId,
+            });
+            // Check for victory
+            this.victorySystem.evaluate();
+            if (this.victorySystem.isMatchEnded()) {
+                this.handleGameOver();
+            }
+        }
+    }
+    handleGameOver() {
+        const winner = this.victorySystem.getWinner();
+        const reason = this.victorySystem.getEndReason();
+        // Update public state
+        this.state.winner = winner;
+        this.state.endReason = reason;
+        // Broadcast game over to all clients
+        const gameOverMessage = {
+            winner,
+            reason: reason || "Match ended",
+        };
+        this.broadcast(shared_1.MESSAGE_TYPES.GAME_OVER, gameOverMessage);
     }
 }
 exports.GameRoom = GameRoom;

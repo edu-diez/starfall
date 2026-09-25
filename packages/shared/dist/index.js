@@ -87,4 +87,7 @@ exports.MESSAGE_TYPES = {
     LOBBY_STATE: "lobbyState",
     MATCH_START: "matchStart",
     ROLE_ASSIGNMENT: "roleAssignment",
+    KILL: "kill",
+    KILL_RESULT: "killResult",
+    GAME_OVER: "gameOver",
 };

@@ -22,6 +22,8 @@ export class GameRoomState extends Schema {
   @type("string") phase: GamePhase = GamePhase.Lobby;
   @type("number") matchStartTime: number = 0;
   @type("number") meetingEndTime: number = 0;
+  @type("string") winner: string | null = null;
+  @type("string") endReason: string | null = null;
 
   createPlayer(sessionId: string, name: string, color: Color): Player {
     const player = new Player();
