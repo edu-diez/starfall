@@ -11,6 +11,8 @@ import {
   ColorChangeMessage,
   ReadyMessage,
   LobbyStateMessage,
+  MatchStartMessage,
+  RoleAssignmentMessage,
   COLORS,
 } from "@starfall/shared";
 
@@ -19,7 +21,6 @@ interface PlayerData {
   sessionId: string;
   name: string;
   color: Color;
-  role: PlayerRole;
   state: PlayerState;
   x: number;
   y: number;
@@ -49,10 +50,13 @@ class GameClient {
   private mySessionId: string | null = null;
   private myColor: Color = "#FF0000";
   private myReady: boolean = false;
+  private myRole: PlayerRole | null = null;
   private animationFrameId: number | null = null;
   private colorPickerUI: HTMLElement | null = null;
   private readyBtn: HTMLButtonElement | null = null;
   private startEligibilityEl: HTMLElement | null = null;
+  private roleRevealUI: HTMLElement | null = null;
+  private startMatchBtn: HTMLButtonElement | null = null;
 
   // Input state
   private keysPressed = new Set<string>();
@@ -239,6 +243,37 @@ class GameClient {
     this.playersList.appendChild(this.startEligibilityEl);
   }
 
+  private createStartMatchButton() {
+    if (this.startMatchBtn) return;
+
+    this.startMatchBtn = document.createElement("button");
+    this.startMatchBtn.id = "start-match-btn";
+    this.startMatchBtn.textContent = "Start Match";
+    this.startMatchBtn.style.cssText = `
+      width: 100%;
+      padding: 12px 24px;
+      background: #3b82f6;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 16px;
+      transition: background 0.2s;
+      display: none;
+    `;
+    this.startMatchBtn.addEventListener("click", () => this.requestMatchStart());
+    this.startMatchBtn.addEventListener("mouseenter", () => {
+      this.startMatchBtn!.style.background = "#2563eb";
+    });
+    this.startMatchBtn.addEventListener("mouseleave", () => {
+      this.startMatchBtn!.style.background = "#3b82f6";
+    });
+
+    this.playersList.appendChild(this.startMatchBtn);
+  }
+
   private updateReadyButton(ready: boolean, canStart: boolean) {
     this.myReady = ready;
     if (!this.readyBtn || !this.startEligibilityEl) return;
@@ -251,11 +286,19 @@ class GameClient {
         "All players ready - Game can start!";
       this.startEligibilityEl.style.background = "rgba(16, 185, 129, 0.2)";
       this.startEligibilityEl.style.color = "#10b981";
+      // Show start match button
+      if (this.startMatchBtn) {
+        this.startMatchBtn.style.display = "block";
+      }
     } else {
       this.startEligibilityEl.textContent =
         "Waiting for all players to ready up...";
       this.startEligibilityEl.style.background = "rgba(245, 158, 11, 0.2)";
       this.startEligibilityEl.style.color = "#f59e0b";
+      // Hide start match button
+      if (this.startMatchBtn) {
+        this.startMatchBtn.style.display = "none";
+      }
     }
   }
 
@@ -269,6 +312,113 @@ class GameClient {
     if (!this.room) return;
     const message: ReadyMessage = { ready: !this.myReady };
     this.room.send(MESSAGE_TYPES.READY, message);
+  }
+
+  private requestMatchStart() {
+    if (!this.room) return;
+    this.room.send(MESSAGE_TYPES.MATCH_START, {});
+  }
+
+  private showRoleReveal(role: PlayerRole) {
+    // Remove existing role reveal UI if any
+    if (this.roleRevealUI) {
+      this.roleRevealUI.remove();
+    }
+
+    this.roleRevealUI = document.createElement("div");
+    this.roleRevealUI.id = "role-reveal";
+    this.roleRevealUI.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.95);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      animation: fadeIn 0.5s ease-out;
+    `;
+
+    const isKiller = role === PlayerRole.Killer;
+    const roleColor = isKiller ? "#ef4444" : "#10b981";
+    const roleText = isKiller ? "KILLER" : "CREWMATE";
+    const roleDescription = isKiller
+      ? "Eliminate all crewmates without getting caught!"
+      : "Complete tasks and find the killer!";
+
+    this.roleRevealUI.innerHTML = `
+      <style>
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes pulse {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.05); }
+        }
+      </style>
+      <div style="
+        text-align: center;
+        animation: pulse 2s ease-in-out infinite;
+      ">
+        <h1 style="
+          font-size: 48px;
+          font-weight: 800;
+          color: ${roleColor};
+          margin-bottom: 16px;
+          text-transform: uppercase;
+          letter-spacing: 4px;
+        ">${roleText}</h1>
+        <p style="
+          font-size: 20px;
+          color: #9ca3af;
+          max-width: 600px;
+        ">${roleDescription}</p>
+      </div>
+      <button id="role-reveal-continue" style="
+        margin-top: 48px;
+        padding: 16px 48px;
+        background: ${roleColor};
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 18px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s, transform 0.1s;
+      ">Continue</button>
+    `;
+
+    document.body.appendChild(this.roleRevealUI);
+
+    const continueBtn = document.getElementById("role-reveal-continue");
+    continueBtn?.addEventListener("click", () => this.hideRoleReveal());
+    continueBtn?.addEventListener("mouseenter", () => {
+      if (continueBtn) continueBtn.style.background = isKiller ? "#dc2626" : "#059669";
+      if (continueBtn) continueBtn.style.transform = "scale(1.02)";
+    });
+    continueBtn?.addEventListener("mouseleave", () => {
+      if (continueBtn) continueBtn.style.background = roleColor;
+      if (continueBtn) continueBtn.style.transform = "scale(1)";
+    });
+  }
+
+  private hideRoleReveal() {
+    if (this.roleRevealUI) {
+      this.roleRevealUI.style.animation = "fadeOut 0.3s ease-in forwards";
+      setTimeout(() => {
+        if (this.roleRevealUI) {
+          this.roleRevealUI.remove();
+          this.roleRevealUI = null;
+        }
+      }, 300);
+    }
+    // Hide lobby UI and start game
+    this.lobbyUI.classList.add("hidden");
+    this.startInputSending();
   }
 
   private handleKeyDown(e: KeyboardEvent) {
@@ -347,6 +497,7 @@ class GameClient {
         this.lobbyUI.classList.remove("hidden");
         this.createColorPickerUI();
         this.createReadyButton();
+        this.createStartMatchButton();
       } else if (message.phase === GamePhase.Playing) {
         this.lobbyUI.classList.add("hidden");
         this.startInputSending();
@@ -403,6 +554,17 @@ class GameClient {
       // The LOBBY_STATE message will follow with updated ready status
     });
 
+    this.room.onMessage(MESSAGE_TYPES.MATCH_START, (message: MatchStartMessage) => {
+      console.log("Match started:", message);
+      // Match is starting, roles will be assigned
+    });
+
+    this.room.onMessage(MESSAGE_TYPES.ROLE_ASSIGNMENT, (message: RoleAssignmentMessage) => {
+      console.log("Role assigned:", message);
+      this.myRole = message.role;
+      this.showRoleReveal(message.role);
+    });
+
     this.room.onMessage(MESSAGE_TYPES.ERROR, (message) => {
       console.error("Server error:", message);
       this.updateConnectionStatus(`Error: ${message.message}`, "status-error");
@@ -415,6 +577,8 @@ class GameClient {
       this.updateConnectionStatus("Disconnected", "status-disconnected");
       this.lobbyUI.classList.remove("hidden");
       this.stopInputSending();
+      this.hideRoleReveal();
+      this.myRole = null;
     });
 
     this.room.onError((code, message) => {

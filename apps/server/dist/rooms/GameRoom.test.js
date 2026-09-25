@@ -34,7 +34,7 @@ const mockBroadcast = vitest_1.vi.fn();
         (0, vitest_1.expect)(player?.name).toBe("TestPlayer");
         (0, vitest_1.expect)(player?.sessionId).toBe("client-1");
         (0, vitest_1.expect)(player?.state).toBe(shared_1.PlayerState.Alive);
-        (0, vitest_1.expect)(player?.role).toBe(shared_1.PlayerRole.Crewmate);
+        // Role is no longer in public state (private role assignment)
     });
     (0, vitest_1.it)("assigns unique colors to players", () => {
         mockRoom.onCreate({});
@@ -428,7 +428,7 @@ const mockBroadcast = vitest_1.vi.fn();
         (0, vitest_1.expect)(player.color).toBe("#FF0000");
         (0, vitest_1.expect)(player.x).toBe(960);
         (0, vitest_1.expect)(player.y).toBe(540);
-        (0, vitest_1.expect)(player.role).toBe(shared_1.PlayerRole.Crewmate);
         (0, vitest_1.expect)(player.state).toBe(shared_1.PlayerState.Alive);
+        // Role is no longer in public state (private role assignment)
     });
 });

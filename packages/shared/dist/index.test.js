@@ -24,10 +24,10 @@ const index_1 = require("../src/index");
         (0, vitest_1.expect)(index_1.GAME_CONFIG.MAX_PLAYERS).toBe(10);
         (0, vitest_1.expect)(index_1.GAME_CONFIG.MIN_PLAYERS).toBe(4);
     });
-    (0, vitest_1.it)("exports COLORS array with 10 colors", () => {
-        (0, vitest_1.expect)(index_1.COLORS.length).toBe(10);
+    (0, vitest_1.it)("exports COLORS array with 21 colors", () => {
+        (0, vitest_1.expect)(index_1.COLORS.length).toBe(21);
         (0, vitest_1.expect)(index_1.COLORS[0]).toBe("#FF0000");
-        (0, vitest_1.expect)(index_1.COLORS[9]).toBe("#8B4513");
+        (0, vitest_1.expect)(index_1.COLORS[20]).toBe("#DA70D6");
     });
     (0, vitest_1.it)("Vec2 type works correctly", () => {
         const vec = { x: 10, y: 20 };

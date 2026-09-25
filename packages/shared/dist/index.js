@@ -16,6 +16,7 @@ var PlayerState;
 var GamePhase;
 (function (GamePhase) {
     GamePhase["Lobby"] = "lobby";
+    GamePhase["AssigningRoles"] = "assigningRoles";
     GamePhase["Playing"] = "playing";
     GamePhase["Meeting"] = "meeting";
     GamePhase["GameOver"] = "gameover";
@@ -68,4 +69,6 @@ exports.MESSAGE_TYPES = {
     COLOR_CHANGE: "colorChange",
     READY: "ready",
     LOBBY_STATE: "lobbyState",
+    MATCH_START: "matchStart",
+    ROLE_ASSIGNMENT: "roleAssignment",
 };

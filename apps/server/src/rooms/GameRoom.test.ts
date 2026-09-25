@@ -47,7 +47,7 @@ describe("GameRoom", () => {
     expect(player?.name).toBe("TestPlayer");
     expect(player?.sessionId).toBe("client-1");
     expect(player?.state).toBe(PlayerState.Alive);
-    expect(player?.role).toBe(PlayerRole.Crewmate);
+    // Role is no longer in public state (private role assignment)
   });
 
   it("assigns unique colors to players", () => {
@@ -566,7 +566,7 @@ describe("GameRoomState", () => {
     expect(player.color).toBe("#FF0000");
     expect(player.x).toBe(960);
     expect(player.y).toBe(540);
-    expect(player.role).toBe(PlayerRole.Crewmate);
     expect(player.state).toBe(PlayerState.Alive);
+    // Role is no longer in public state (private role assignment)
   });
 });

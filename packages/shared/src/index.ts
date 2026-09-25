@@ -13,6 +13,7 @@ export enum PlayerState {
 
 export enum GamePhase {
   Lobby = "lobby",
+  AssigningRoles = "assigningRoles",
   Playing = "playing",
   Meeting = "meeting",
   GameOver = "gameover",
@@ -80,6 +81,8 @@ export const MESSAGE_TYPES = {
   COLOR_CHANGE: "colorChange",
   READY: "ready",
   LOBBY_STATE: "lobbyState",
+  MATCH_START: "matchStart",
+  ROLE_ASSIGNMENT: "roleAssignment",
 } as const;
 
 export type MessageType = (typeof MESSAGE_TYPES)[keyof typeof MESSAGE_TYPES];
@@ -132,4 +135,13 @@ export interface LobbyStateMessage {
   minPlayers: number;
   maxPlayers: number;
   canStart: boolean;
+}
+
+export interface MatchStartMessage {
+  matchId: number;
+  phase: GamePhase;
+}
+
+export interface RoleAssignmentMessage {
+  role: PlayerRole;
 }

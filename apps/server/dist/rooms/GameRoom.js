@@ -5,6 +5,8 @@ const colyseus_1 = require("colyseus");
 const GameRoomState_1 = require("./schema/GameRoomState");
 const shared_1 = require("@starfall/shared");
 const LobbySystem_1 = require("../systems/LobbySystem");
+const MatchLifecycleSystem_1 = require("../systems/MatchLifecycleSystem");
+const RoleAssignmentSystem_1 = require("../systems/RoleAssignmentSystem");
 class GameRoom extends colyseus_1.Room {
     maxClients = shared_1.GAME_CONFIG.MAX_PLAYERS;
     // Fixed timestep for authoritative simulation (60 Hz)
@@ -14,15 +16,19 @@ class GameRoom extends colyseus_1.Room {
     lastTickTime = 0;
     // Store latest validated input per player
     playerInputs = new Map();
-    // Lobby and color systems
+    // Systems
     lobbySystem;
     colorSystem;
+    matchLifecycleSystem;
+    roleAssignmentSystem;
     onCreate(options) {
         this.setState(new GameRoomState_1.GameRoomState());
         this.state.phase = shared_1.GamePhase.Lobby;
         // Initialize systems
         this.lobbySystem = new LobbySystem_1.LobbySystem(this.state);
         this.colorSystem = this.lobbySystem.getColorSystem();
+        this.matchLifecycleSystem = new MatchLifecycleSystem_1.MatchLifecycleSystem(this.state, this.lobbySystem);
+        this.roleAssignmentSystem = new RoleAssignmentSystem_1.RoleAssignmentSystem(this.state, new RoleAssignmentSystem_1.DefaultRandomSource());
         this.onMessage(shared_1.MESSAGE_TYPES.JOIN, (client, message) => {
             this.handleJoin(client, message);
         });
@@ -37,6 +43,9 @@ class GameRoom extends colyseus_1.Room {
         });
         this.onMessage(shared_1.MESSAGE_TYPES.READY, (client, message) => {
             this.handleReady(client, message);
+        });
+        this.onMessage(shared_1.MESSAGE_TYPES.MATCH_START, (client) => {
+            this.handleMatchStart(client);
         });
         // Start the fixed-rate simulation loop
         this.startSimulationLoop();
@@ -222,6 +231,55 @@ class GameRoom extends colyseus_1.Room {
             // Broadcast updated lobby state to all clients
             this.broadcast(shared_1.MESSAGE_TYPES.LOBBY_STATE, this.lobbySystem.getLobbyState());
         }
+    }
+    handleMatchStart(client) {
+        // Only the host (first player) can start the match, or any player if we allow it
+        // For MVP, allow any player to start if conditions are met
+        if (!this.matchLifecycleSystem.canStartMatch()) {
+            client.send(shared_1.MESSAGE_TYPES.ERROR, {
+                message: "Cannot start match: requirements not met",
+            });
+            return;
+        }
+        // Start the match - transitions to AssigningRoles
+        const started = this.matchLifecycleSystem.startMatch();
+        if (!started) {
+            client.send(shared_1.MESSAGE_TYPES.ERROR, {
+                message: "Failed to start match",
+            });
+            return;
+        }
+        // Assign roles privately
+        const roleAssignments = this.roleAssignmentSystem.assignRoles();
+        // Validate assignment
+        if (!this.roleAssignmentSystem.validateAssignment()) {
+            console.error("Role assignment validation failed!");
+            // Reset to lobby on failure
+            this.matchLifecycleSystem.resetMatch();
+            this.broadcast(shared_1.MESSAGE_TYPES.LOBBY_STATE, this.lobbySystem.getLobbyState());
+            return;
+        }
+        // Send match start notification to all clients
+        const matchStartMessage = {
+            matchId: this.matchLifecycleSystem.getMatchId(),
+            phase: shared_1.GamePhase.AssigningRoles,
+        };
+        this.broadcast(shared_1.MESSAGE_TYPES.MATCH_START, matchStartMessage);
+        // Send private role assignment to each player
+        this.state.players.forEach((player, sessionId) => {
+            const role = roleAssignments.get(sessionId);
+            if (role) {
+                const roleMessage = { role };
+                const targetClient = this.clients.find((c) => c.sessionId === sessionId);
+                if (targetClient) {
+                    targetClient.send(shared_1.MESSAGE_TYPES.ROLE_ASSIGNMENT, roleMessage);
+                }
+            }
+        });
+        // Complete role assignment and transition to Playing
+        this.matchLifecycleSystem.completeRoleAssignment();
+        // Broadcast updated lobby state (now with Playing phase)
+        this.broadcast(shared_1.MESSAGE_TYPES.LOBBY_STATE, this.lobbySystem.getLobbyState());
     }
 }
 exports.GameRoom = GameRoom;

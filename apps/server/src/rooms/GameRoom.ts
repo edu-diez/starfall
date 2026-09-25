@@ -13,9 +13,13 @@ import {
   ColorChangeMessage,
   ReadyMessage,
   LobbyStateMessage,
+  MatchStartMessage,
+  RoleAssignmentMessage,
 } from "@starfall/shared";
 import { LobbySystem } from "../systems/LobbySystem";
 import { ColorSystem } from "../systems/ColorSystem";
+import { MatchLifecycleSystem } from "../systems/MatchLifecycleSystem";
+import { RoleAssignmentSystem, DefaultRandomSource } from "../systems/RoleAssignmentSystem";
 
 export class GameRoom extends Room<GameRoomState> {
   override maxClients = GAME_CONFIG.MAX_PLAYERS;
@@ -32,9 +36,11 @@ export class GameRoom extends Room<GameRoomState> {
     { direction: Vec2; timestamp: number }
   >();
 
-  // Lobby and color systems
+  // Systems
   private lobbySystem!: LobbySystem;
   private colorSystem!: ColorSystem;
+  private matchLifecycleSystem!: MatchLifecycleSystem;
+  private roleAssignmentSystem!: RoleAssignmentSystem;
 
   override onCreate(options: any) {
     this.setState(new GameRoomState());
@@ -43,6 +49,8 @@ export class GameRoom extends Room<GameRoomState> {
     // Initialize systems
     this.lobbySystem = new LobbySystem(this.state);
     this.colorSystem = this.lobbySystem.getColorSystem();
+    this.matchLifecycleSystem = new MatchLifecycleSystem(this.state, this.lobbySystem);
+    this.roleAssignmentSystem = new RoleAssignmentSystem(this.state, new DefaultRandomSource());
 
     this.onMessage(MESSAGE_TYPES.JOIN, (client: Client, message: any) => {
       this.handleJoin(client, message);
@@ -70,6 +78,13 @@ export class GameRoom extends Room<GameRoomState> {
       MESSAGE_TYPES.READY,
       (client: Client, message: ReadyMessage) => {
         this.handleReady(client, message);
+      },
+    );
+
+    this.onMessage(
+      MESSAGE_TYPES.MATCH_START,
+      (client: Client) => {
+        this.handleMatchStart(client);
       },
     );
 
@@ -305,5 +320,62 @@ export class GameRoom extends Room<GameRoomState> {
       // Broadcast updated lobby state to all clients
       this.broadcast(MESSAGE_TYPES.LOBBY_STATE, this.lobbySystem.getLobbyState());
     }
+  }
+
+  private handleMatchStart(client: Client) {
+    // Only the host (first player) can start the match, or any player if we allow it
+    // For MVP, allow any player to start if conditions are met
+    if (!this.matchLifecycleSystem.canStartMatch()) {
+      client.send(MESSAGE_TYPES.ERROR, {
+        message: "Cannot start match: requirements not met",
+      });
+      return;
+    }
+
+    // Start the match - transitions to AssigningRoles
+    const started = this.matchLifecycleSystem.startMatch();
+    if (!started) {
+      client.send(MESSAGE_TYPES.ERROR, {
+        message: "Failed to start match",
+      });
+      return;
+    }
+
+    // Assign roles privately
+    const roleAssignments = this.roleAssignmentSystem.assignRoles();
+
+    // Validate assignment
+    if (!this.roleAssignmentSystem.validateAssignment()) {
+      console.error("Role assignment validation failed!");
+      // Reset to lobby on failure
+      this.matchLifecycleSystem.resetMatch();
+      this.broadcast(MESSAGE_TYPES.LOBBY_STATE, this.lobbySystem.getLobbyState());
+      return;
+    }
+
+    // Send match start notification to all clients
+    const matchStartMessage: MatchStartMessage = {
+      matchId: this.matchLifecycleSystem.getMatchId(),
+      phase: GamePhase.AssigningRoles,
+    };
+    this.broadcast(MESSAGE_TYPES.MATCH_START, matchStartMessage);
+
+    // Send private role assignment to each player
+    this.state.players.forEach((player, sessionId) => {
+      const role = roleAssignments.get(sessionId);
+      if (role) {
+        const roleMessage: RoleAssignmentMessage = { role };
+        const targetClient = this.clients.find((c) => c.sessionId === sessionId);
+        if (targetClient) {
+          targetClient.send(MESSAGE_TYPES.ROLE_ASSIGNMENT, roleMessage);
+        }
+      }
+    });
+
+    // Complete role assignment and transition to Playing
+    this.matchLifecycleSystem.completeRoleAssignment();
+
+    // Broadcast updated lobby state (now with Playing phase)
+    this.broadcast(MESSAGE_TYPES.LOBBY_STATE, this.lobbySystem.getLobbyState());
   }
 }

@@ -16,7 +16,6 @@ class Player extends schema_1.Schema {
     sessionId = "";
     name = "";
     color = "#FF0000";
-    role = shared_1.PlayerRole.Crewmate;
     state = shared_1.PlayerState.Alive;
     x = 0;
     y = 0;
@@ -36,10 +35,6 @@ __decorate([
     (0, schema_1.type)("string"),
     __metadata("design:type", String)
 ], Player.prototype, "color", void 0);
-__decorate([
-    (0, schema_1.type)("string"),
-    __metadata("design:type", String)
-], Player.prototype, "role", void 0);
 __decorate([
     (0, schema_1.type)("string"),
     __metadata("design:type", String)
@@ -72,6 +67,8 @@ class GameRoomState extends schema_1.Schema {
         player.color = color;
         player.x = 960; // Center of map
         player.y = 540;
+        player.state = shared_1.PlayerState.Alive;
+        player.ready = false;
         return player;
     }
 }

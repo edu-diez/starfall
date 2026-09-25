@@ -9,6 +9,7 @@ export declare enum PlayerState {
 }
 export declare enum GamePhase {
     Lobby = "lobby",
+    AssigningRoles = "assigningRoles",
     Playing = "playing",
     Meeting = "meeting",
     GameOver = "gameover"
@@ -47,6 +48,8 @@ export declare const MESSAGE_TYPES: {
     readonly COLOR_CHANGE: "colorChange";
     readonly READY: "ready";
     readonly LOBBY_STATE: "lobbyState";
+    readonly MATCH_START: "matchStart";
+    readonly ROLE_ASSIGNMENT: "roleAssignment";
 };
 export type MessageType = (typeof MESSAGE_TYPES)[keyof typeof MESSAGE_TYPES];
 export interface MoveMessage {
@@ -89,5 +92,12 @@ export interface LobbyStateMessage {
     minPlayers: number;
     maxPlayers: number;
     canStart: boolean;
+}
+export interface MatchStartMessage {
+    matchId: number;
+    phase: GamePhase;
+}
+export interface RoleAssignmentMessage {
+    role: PlayerRole;
 }
 //# sourceMappingURL=index.d.ts.map
