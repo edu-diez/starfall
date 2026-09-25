@@ -11,6 +11,7 @@ export declare class GameRoom extends Room<GameRoomState> {
     private colorSystem;
     private matchLifecycleSystem;
     private roleAssignmentSystem;
+    private collisionSystem;
     onCreate(options: any): void;
     onJoin(client: Client, options: any): void;
     onLeave(client: Client, consented: boolean): void;

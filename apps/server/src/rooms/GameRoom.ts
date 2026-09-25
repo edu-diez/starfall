@@ -20,6 +20,7 @@ import { LobbySystem } from "../systems/LobbySystem";
 import { ColorSystem } from "../systems/ColorSystem";
 import { MatchLifecycleSystem } from "../systems/MatchLifecycleSystem";
 import { RoleAssignmentSystem, DefaultRandomSource } from "../systems/RoleAssignmentSystem";
+import { CollisionSystem } from "../systems/CollisionSystem";
 
 export class GameRoom extends Room<GameRoomState> {
   override maxClients = GAME_CONFIG.MAX_PLAYERS;
@@ -41,6 +42,7 @@ export class GameRoom extends Room<GameRoomState> {
   private colorSystem!: ColorSystem;
   private matchLifecycleSystem!: MatchLifecycleSystem;
   private roleAssignmentSystem!: RoleAssignmentSystem;
+  private collisionSystem!: CollisionSystem;
 
   override onCreate(options: any) {
     this.setState(new GameRoomState());
@@ -51,6 +53,7 @@ export class GameRoom extends Room<GameRoomState> {
     this.colorSystem = this.lobbySystem.getColorSystem();
     this.matchLifecycleSystem = new MatchLifecycleSystem(this.state, this.lobbySystem);
     this.roleAssignmentSystem = new RoleAssignmentSystem(this.state, new DefaultRandomSource());
+    this.collisionSystem = new CollisionSystem(this.state);
 
     this.onMessage(MESSAGE_TYPES.JOIN, (client: Client, message: any) => {
       this.handleJoin(client, message);
@@ -145,14 +148,23 @@ export class GameRoom extends Room<GameRoomState> {
       let newX = player.x + direction.x * speed * deltaTime;
       let newY = player.y + direction.y * speed * deltaTime;
 
-      // Apply world boundaries (with player radius padding)
-      const radius = GAME_CONFIG.PLAYER_RADIUS;
-      newX = Math.max(radius, Math.min(GAME_CONFIG.MAP_WIDTH - radius, newX));
-      newY = Math.max(radius, Math.min(GAME_CONFIG.MAP_HEIGHT - radius, newY));
-
-      // Update player position
-      player.x = newX;
-      player.y = newY;
+      // Validate movement with collision system
+      if (this.collisionSystem.isMovementValid(player.x, player.y, newX, newY)) {
+        // Movement is valid, update position
+        player.x = newX;
+        player.y = newY;
+      } else {
+        // Movement would collide - try to slide along walls
+        // Try X-only movement
+        if (this.collisionSystem.isMovementValid(player.x, player.y, newX, player.y)) {
+          player.x = newX;
+        }
+        // Try Y-only movement
+        if (this.collisionSystem.isMovementValid(player.x, player.y, player.x, newY)) {
+          player.y = newY;
+        }
+        // If neither works, position stays the same (blocked by wall)
+      }
     });
   }
 
@@ -171,11 +183,21 @@ export class GameRoom extends Room<GameRoomState> {
       return;
     }
 
+    // Get a valid spawn point from collision system
+    const spawnPoint = this.collisionSystem.getValidSpawnPoint();
+
     // Handle player join through lobby system (assigns color)
     const assignedColor = this.lobbySystem.handlePlayerJoin(
       client.sessionId,
       playerName,
     );
+
+    // Set the player's position to the valid spawn point
+    const player = this.state.players.get(client.sessionId);
+    if (player) {
+      player.x = spawnPoint.x;
+      player.y = spawnPoint.y;
+    }
 
     // Send welcome message with private role (will be assigned later)
     client.send(MESSAGE_TYPES.WELCOME, {

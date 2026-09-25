@@ -22,6 +22,7 @@ export interface PlayerInput {
     direction: Vec2;
     timestamp: number;
 }
+export * from "./map";
 export declare const GAME_CONFIG: {
     readonly MAP_WIDTH: 1920;
     readonly MAP_HEIGHT: 1080;

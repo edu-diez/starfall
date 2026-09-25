@@ -207,9 +207,13 @@ const mockBroadcast = vitest_1.vi.fn();
         (0, vitest_1.it)("movement distance is determined by server time and speed", () => {
             const client = mockClient("client-1");
             const player = mockRoom.state.players.get("client-1");
+            // Place player in central corridor (open area) where they can move freely
+            // Central corridor spans x=800 to x=1120, walls at x=800 and x=1100
+            // Player radius is 16, so valid range is x=816 to x=1084
+            // Place at x=850 to allow 200px movement right to x=1050 (well within bounds)
             if (player) {
-                player.x = shared_1.GAME_CONFIG.MAP_WIDTH / 2;
-                player.y = shared_1.GAME_CONFIG.MAP_HEIGHT / 2;
+                player.x = 850;
+                player.y = 540;
             }
             // Move right at full speed
             const direction = { x: 1, y: 0 };
@@ -218,7 +222,7 @@ const mockBroadcast = vitest_1.vi.fn();
             mockRoom.lastTickTime = Date.now() - 1000;
             mockRoom.tick();
             // Player should move exactly PLAYER_SPEED pixels in 1 second
-            const expectedX = shared_1.GAME_CONFIG.MAP_WIDTH / 2 + shared_1.GAME_CONFIG.PLAYER_SPEED;
+            const expectedX = 850 + shared_1.GAME_CONFIG.PLAYER_SPEED;
             (0, vitest_1.expect)(player?.x).toBeCloseTo(expectedX, 0);
         });
         (0, vitest_1.it)("does not simulate movement in Lobby phase", () => {

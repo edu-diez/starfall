@@ -1411,7 +1411,7 @@ M0  Repository and toolchain foundation                COMPLETED
 M1  Connection, spawning, and authoritative movement   COMPLETED
 M2  Lobby, unique colors, and ready flow               COMPLETED
 M3  Match lifecycle and private role assignment        COMPLETED
-M4  Map boundaries and collision                       NOT STARTED
+M4  Map boundaries and collision                       COMPLETED
 M5  Kill system, elimination, and basic victory        NOT STARTED
 M6  Emergency meetings and discussion phase            NOT STARTED
 M7  Voting, ejection, and complete victory flow        NOT STARTED

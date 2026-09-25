@@ -7,6 +7,7 @@ const shared_1 = require("@starfall/shared");
 const LobbySystem_1 = require("../systems/LobbySystem");
 const MatchLifecycleSystem_1 = require("../systems/MatchLifecycleSystem");
 const RoleAssignmentSystem_1 = require("../systems/RoleAssignmentSystem");
+const CollisionSystem_1 = require("../systems/CollisionSystem");
 class GameRoom extends colyseus_1.Room {
     maxClients = shared_1.GAME_CONFIG.MAX_PLAYERS;
     // Fixed timestep for authoritative simulation (60 Hz)
@@ -21,6 +22,7 @@ class GameRoom extends colyseus_1.Room {
     colorSystem;
     matchLifecycleSystem;
     roleAssignmentSystem;
+    collisionSystem;
     onCreate(options) {
         this.setState(new GameRoomState_1.GameRoomState());
         this.state.phase = shared_1.GamePhase.Lobby;
@@ -29,6 +31,7 @@ class GameRoom extends colyseus_1.Room {
         this.colorSystem = this.lobbySystem.getColorSystem();
         this.matchLifecycleSystem = new MatchLifecycleSystem_1.MatchLifecycleSystem(this.state, this.lobbySystem);
         this.roleAssignmentSystem = new RoleAssignmentSystem_1.RoleAssignmentSystem(this.state, new RoleAssignmentSystem_1.DefaultRandomSource());
+        this.collisionSystem = new CollisionSystem_1.CollisionSystem(this.state);
         this.onMessage(shared_1.MESSAGE_TYPES.JOIN, (client, message) => {
             this.handleJoin(client, message);
         });
@@ -94,13 +97,24 @@ class GameRoom extends colyseus_1.Room {
             // Calculate new position
             let newX = player.x + direction.x * speed * deltaTime;
             let newY = player.y + direction.y * speed * deltaTime;
-            // Apply world boundaries (with player radius padding)
-            const radius = shared_1.GAME_CONFIG.PLAYER_RADIUS;
-            newX = Math.max(radius, Math.min(shared_1.GAME_CONFIG.MAP_WIDTH - radius, newX));
-            newY = Math.max(radius, Math.min(shared_1.GAME_CONFIG.MAP_HEIGHT - radius, newY));
-            // Update player position
-            player.x = newX;
-            player.y = newY;
+            // Validate movement with collision system
+            if (this.collisionSystem.isMovementValid(player.x, player.y, newX, newY)) {
+                // Movement is valid, update position
+                player.x = newX;
+                player.y = newY;
+            }
+            else {
+                // Movement would collide - try to slide along walls
+                // Try X-only movement
+                if (this.collisionSystem.isMovementValid(player.x, player.y, newX, player.y)) {
+                    player.x = newX;
+                }
+                // Try Y-only movement
+                if (this.collisionSystem.isMovementValid(player.x, player.y, player.x, newY)) {
+                    player.y = newY;
+                }
+                // If neither works, position stays the same (blocked by wall)
+            }
         });
     }
     handleJoin(client, message) {
@@ -114,8 +128,16 @@ class GameRoom extends colyseus_1.Room {
             client.send(shared_1.MESSAGE_TYPES.ERROR, { message: "Cannot join at this time" });
             return;
         }
+        // Get a valid spawn point from collision system
+        const spawnPoint = this.collisionSystem.getValidSpawnPoint();
         // Handle player join through lobby system (assigns color)
         const assignedColor = this.lobbySystem.handlePlayerJoin(client.sessionId, playerName);
+        // Set the player's position to the valid spawn point
+        const player = this.state.players.get(client.sessionId);
+        if (player) {
+            player.x = spawnPoint.x;
+            player.y = spawnPoint.y;
+        }
         // Send welcome message with private role (will be assigned later)
         client.send(shared_1.MESSAGE_TYPES.WELCOME, {
             sessionId: client.sessionId,

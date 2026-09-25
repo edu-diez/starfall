@@ -1,5 +1,5 @@
 import { Client } from "colyseus.js";
-import { GamePhase, PlayerRole, PlayerState, GAME_CONFIG, MESSAGE_TYPES, COLORS, } from "@starfall/shared";
+import { GamePhase, PlayerRole, PlayerState, GAME_CONFIG, MESSAGE_TYPES, COLORS, STARFALL_MAP, } from "@starfall/shared";
 // Game client class
 class GameClient {
     client;
@@ -22,6 +22,8 @@ class GameClient {
     startEligibilityEl = null;
     roleRevealUI = null;
     startMatchBtn = null;
+    // Debug mode
+    debugMode = false;
     // Input state
     keysPressed = new Set();
     lastSentInput = { x: 0, y: 0 };
@@ -69,6 +71,13 @@ class GameClient {
         // Keyboard input for movement
         window.addEventListener("keydown", (e) => this.handleKeyDown(e));
         window.addEventListener("keyup", (e) => this.handleKeyUp(e));
+        // Debug mode toggle (F3 key)
+        window.addEventListener("keydown", (e) => {
+            if (e.key === "F3") {
+                this.debugMode = !this.debugMode;
+                console.log(`Debug mode: ${this.debugMode ? "ON" : "OFF"}`);
+            }
+        });
     }
     createColorPickerUI() {
         if (this.colorPickerUI)
@@ -554,8 +563,8 @@ class GameClient {
         // Clear canvas
         this.ctx.fillStyle = "#0f0f1a";
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-        // Draw grid background
-        this.drawGrid();
+        // Draw map (walls, doors, rooms)
+        this.drawMap();
         // Draw players if in game
         if (this.room?.state) {
             this.room.state.players.forEach((player) => {
@@ -563,41 +572,151 @@ class GameClient {
             });
         }
     }
-    drawGrid() {
-        const gridSize = 50;
-        this.ctx.strokeStyle = "rgba(255, 255, 255, 0.03)";
-        this.ctx.lineWidth = 1;
-        for (let x = 0; x < this.canvas.width; x += gridSize) {
+    drawMap() {
+        const scaleX = this.canvas.width / GAME_CONFIG.MAP_WIDTH;
+        const scaleY = this.canvas.height / GAME_CONFIG.MAP_HEIGHT;
+        const scale = Math.min(scaleX, scaleY);
+        const offsetX = (this.canvas.width - GAME_CONFIG.MAP_WIDTH * scale) / 2;
+        const offsetY = (this.canvas.height - GAME_CONFIG.MAP_HEIGHT * scale) / 2;
+        // Draw walls
+        this.ctx.strokeStyle = "#374151";
+        this.ctx.lineWidth = 2 * scale;
+        this.ctx.fillStyle = "#1f2937";
+        for (const wall of STARFALL_MAP.walls) {
+            const x = offsetX + wall.x * scale;
+            const y = offsetY + wall.y * scale;
+            const w = wall.width * scale;
+            const h = wall.height * scale;
+            this.ctx.fillRect(x, y, w, h);
+            this.ctx.strokeRect(x, y, w, h);
+        }
+        // Draw doors as openings (lighter color)
+        this.ctx.fillStyle = "#4b5563";
+        this.ctx.strokeStyle = "#6b7280";
+        this.ctx.lineWidth = 1 * scale;
+        for (const door of STARFALL_MAP.doors) {
+            if (!door.isOpen)
+                continue;
+            const x = offsetX + door.x * scale;
+            const y = offsetY + door.y * scale;
+            const w = door.width * scale;
+            const h = door.height * scale;
+            this.ctx.fillRect(x, y, w, h);
+            this.ctx.strokeRect(x, y, w, h);
+        }
+        // Draw room labels (optional, for debugging)
+        this.ctx.fillStyle = "rgba(156, 163, 175, 0.5)";
+        this.ctx.font = `${Math.max(10, 12 * scale)}px sans-serif`;
+        this.ctx.textAlign = "center";
+        for (const room of STARFALL_MAP.rooms) {
+            const x = offsetX + (room.bounds.x + room.bounds.width / 2) * scale;
+            const y = offsetY + (room.bounds.y + room.bounds.height / 2) * scale;
+            this.ctx.fillText(room.name, x, y);
+        }
+        // Draw meeting room indicator
+        const meetingRoom = STARFALL_MAP.rooms.find(r => r.id === STARFALL_MAP.meetingRoomId);
+        if (meetingRoom) {
+            const x = offsetX + (meetingRoom.bounds.x + meetingRoom.bounds.width / 2) * scale;
+            const y = offsetY + (meetingRoom.bounds.y + meetingRoom.bounds.height / 2) * scale;
+            this.ctx.fillStyle = "rgba(59, 130, 246, 0.3)";
             this.ctx.beginPath();
-            this.ctx.moveTo(x, 0);
-            this.ctx.lineTo(x, this.canvas.height);
+            this.ctx.arc(x, y, Math.max(50, 80 * scale), 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.strokeStyle = "#3b82f6";
+            this.ctx.lineWidth = 2 * scale;
             this.ctx.stroke();
         }
-        for (let y = 0; y < this.canvas.height; y += gridSize) {
+        // Debug mode: draw collision boundaries
+        if (this.debugMode) {
+            this.drawDebugCollision(scale, offsetX, offsetY);
+        }
+    }
+    drawDebugCollision(scale, offsetX, offsetY) {
+        // Draw player collision radius indicator for local player
+        if (this.mySessionId && this.room?.state) {
+            const myPlayer = this.room.state.players.get(this.mySessionId);
+            if (myPlayer && myPlayer.state === PlayerState.Alive) {
+                const screenX = offsetX + myPlayer.x * scale;
+                const screenY = offsetY + myPlayer.y * scale;
+                const radius = GAME_CONFIG.PLAYER_RADIUS * scale;
+                this.ctx.strokeStyle = "#10b981";
+                this.ctx.lineWidth = 2 * scale;
+                this.ctx.setLineDash([5 * scale, 5 * scale]);
+                this.ctx.beginPath();
+                this.ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
+                this.ctx.stroke();
+                this.ctx.setLineDash([]);
+            }
+        }
+        // Draw spawn points
+        this.ctx.fillStyle = "rgba(16, 185, 129, 0.5)";
+        this.ctx.strokeStyle = "#10b981";
+        this.ctx.lineWidth = 1 * scale;
+        for (const spawn of STARFALL_MAP.spawnPoints) {
+            const x = offsetX + spawn.x * scale;
+            const y = offsetY + spawn.y * scale;
+            const r = 8 * scale;
             this.ctx.beginPath();
-            this.ctx.moveTo(0, y);
-            this.ctx.lineTo(this.canvas.width, y);
+            this.ctx.arc(x, y, r, 0, Math.PI * 2);
+            this.ctx.fill();
             this.ctx.stroke();
         }
+        // Draw vent nodes (for future vent system)
+        this.ctx.fillStyle = "rgba(239, 68, 68, 0.3)";
+        this.ctx.strokeStyle = "#ef4444";
+        this.ctx.lineWidth = 1 * scale;
+        for (const vent of STARFALL_MAP.ventNodes) {
+            const x = offsetX + vent.x * scale;
+            const y = offsetY + vent.y * scale;
+            const r = vent.radius * scale;
+            this.ctx.beginPath();
+            this.ctx.arc(x, y, r, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.stroke();
+        }
+        // Draw vent connections
+        this.ctx.strokeStyle = "rgba(239, 68, 68, 0.5)";
+        this.ctx.lineWidth = 1 * scale;
+        this.ctx.setLineDash([10 * scale, 5 * scale]);
+        for (const conn of STARFALL_MAP.ventConnections) {
+            const from = STARFALL_MAP.ventNodes.find(v => v.id === conn.from);
+            const to = STARFALL_MAP.ventNodes.find(v => v.id === conn.to);
+            if (from && to) {
+                const x1 = offsetX + from.x * scale;
+                const y1 = offsetY + from.y * scale;
+                const x2 = offsetX + to.x * scale;
+                const y2 = offsetY + to.y * scale;
+                this.ctx.beginPath();
+                this.ctx.moveTo(x1, y1);
+                this.ctx.lineTo(x2, y2);
+                this.ctx.stroke();
+            }
+        }
+        this.ctx.setLineDash([]);
     }
     drawPlayer(player) {
         if (player.state !== PlayerState.Alive)
             return;
-        const screenX = (player.x / GAME_CONFIG.MAP_WIDTH) * this.canvas.width;
-        const screenY = (player.y / GAME_CONFIG.MAP_HEIGHT) * this.canvas.height;
-        const radius = (GAME_CONFIG.PLAYER_RADIUS / GAME_CONFIG.MAP_WIDTH) * this.canvas.width;
+        const scaleX = this.canvas.width / GAME_CONFIG.MAP_WIDTH;
+        const scaleY = this.canvas.height / GAME_CONFIG.MAP_HEIGHT;
+        const scale = Math.min(scaleX, scaleY);
+        const offsetX = (this.canvas.width - GAME_CONFIG.MAP_WIDTH * scale) / 2;
+        const offsetY = (this.canvas.height - GAME_CONFIG.MAP_HEIGHT * scale) / 2;
+        const screenX = offsetX + player.x * scale;
+        const screenY = offsetY + player.y * scale;
+        const radius = GAME_CONFIG.PLAYER_RADIUS * scale;
         this.ctx.beginPath();
         this.ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
         this.ctx.fillStyle = player.color;
         this.ctx.fill();
         this.ctx.strokeStyle = "#fff";
-        this.ctx.lineWidth = 2;
+        this.ctx.lineWidth = 2 * scale;
         this.ctx.stroke();
         // Draw name
         this.ctx.fillStyle = "#fff";
-        this.ctx.font = "12px sans-serif";
+        this.ctx.font = `${Math.max(10, 12 * scale)}px sans-serif`;
         this.ctx.textAlign = "center";
-        this.ctx.fillText(player.name, screenX, screenY - radius - 8);
+        this.ctx.fillText(player.name, screenX, screenY - radius - 8 * scale);
     }
     start() {
         this.gameLoop();

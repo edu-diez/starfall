@@ -29,6 +29,9 @@ export interface PlayerInput {
   timestamp: number;
 }
 
+// Re-export map types and functions
+export * from "./map";
+
 export const GAME_CONFIG = {
   MAP_WIDTH: 1920,
   MAP_HEIGHT: 1080,

@@ -276,9 +276,13 @@ describe("GameRoom", () => {
       const client = mockClient("client-1");
       const player = mockRoom.state.players.get("client-1");
 
+      // Place player in central corridor (open area) where they can move freely
+      // Central corridor spans x=800 to x=1120, walls at x=800 and x=1100
+      // Player radius is 16, so valid range is x=816 to x=1084
+      // Place at x=850 to allow 200px movement right to x=1050 (well within bounds)
       if (player) {
-        player.x = GAME_CONFIG.MAP_WIDTH / 2;
-        player.y = GAME_CONFIG.MAP_HEIGHT / 2;
+        player.x = 850;
+        player.y = 540;
       }
 
       // Move right at full speed
@@ -290,7 +294,7 @@ describe("GameRoom", () => {
       mockRoom.tick();
 
       // Player should move exactly PLAYER_SPEED pixels in 1 second
-      const expectedX = GAME_CONFIG.MAP_WIDTH / 2 + GAME_CONFIG.PLAYER_SPEED;
+      const expectedX = 850 + GAME_CONFIG.PLAYER_SPEED;
       expect(player?.x).toBeCloseTo(expectedX, 0);
     });
 
