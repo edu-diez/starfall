@@ -18,6 +18,10 @@ import {
   KillMessage,
   KillResultMessage,
   GameOverMessage,
+  CallMeetingMessage,
+  MeetingCalledMessage,
+  MeetingStartedMessage,
+  MeetingStateMessage,
 } from "@starfall/shared";
 import { LobbySystem } from "../systems/LobbySystem";
 import { ColorSystem } from "../systems/ColorSystem";
@@ -26,6 +30,7 @@ import { RoleAssignmentSystem, DefaultRandomSource } from "../systems/RoleAssign
 import { CollisionSystem } from "../systems/CollisionSystem";
 import { KillSystem, DefaultClock } from "../systems/KillSystem";
 import { VictorySystem } from "../systems/VictorySystem";
+import { MeetingSystem } from "../systems/MeetingSystem";
 
 export class GameRoom extends Room<GameRoomState> {
   override maxClients = GAME_CONFIG.MAX_PLAYERS;
@@ -50,6 +55,7 @@ export class GameRoom extends Room<GameRoomState> {
   private collisionSystem!: CollisionSystem;
   private killSystem!: KillSystem;
   private victorySystem!: VictorySystem;
+  private meetingSystem!: MeetingSystem;
 
   override onCreate(options: any) {
     this.setState(new GameRoomState());
@@ -63,6 +69,7 @@ export class GameRoom extends Room<GameRoomState> {
     this.collisionSystem = new CollisionSystem(this.state);
     this.killSystem = new KillSystem(this.state, this.roleAssignmentSystem, new DefaultClock());
     this.victorySystem = new VictorySystem(this.state, this.roleAssignmentSystem);
+    this.meetingSystem = new MeetingSystem(this.state, new DefaultClock());
 
     this.onMessage(MESSAGE_TYPES.JOIN, (client: Client, message: any) => {
       this.handleJoin(client, message);
@@ -107,6 +114,13 @@ export class GameRoom extends Room<GameRoomState> {
       },
     );
 
+    this.onMessage(
+      MESSAGE_TYPES.CALL_MEETING,
+      (client: Client, message: CallMeetingMessage) => {
+        this.handleCallMeeting(client, message);
+      },
+    );
+
     // Start the fixed-rate simulation loop
     this.startSimulationLoop();
   }
@@ -143,6 +157,13 @@ export class GameRoom extends Room<GameRoomState> {
     const now = Date.now();
     const deltaTime = (now - this.lastTickTime) / 1000; // Convert to seconds
     this.lastTickTime = now;
+
+    // Update meeting system (checks for discussion timeout)
+    const meetingEnded = this.meetingSystem.update();
+    if (meetingEnded) {
+      // Discussion ended, transition to voting phase
+      this.handleMeetingEnded();
+    }
 
     // Only simulate movement during playing phase
     if (this.state.phase !== GamePhase.Playing) {
@@ -270,6 +291,11 @@ export class GameRoom extends Room<GameRoomState> {
       return;
     }
 
+    // Reject movement during meeting phase
+    if (this.state.phase === GamePhase.Meeting) {
+      return;
+    }
+
     // Validate input
     const { direction, timestamp } = message;
 
@@ -385,6 +411,9 @@ export class GameRoom extends Room<GameRoomState> {
       return;
     }
 
+    // Reset meeting system for new match
+    this.meetingSystem.reset();
+
     // Assign roles privately
     const roleAssignments = this.roleAssignmentSystem.assignRoles();
 
@@ -476,5 +505,77 @@ export class GameRoom extends Room<GameRoomState> {
       reason: reason || "Match ended",
     };
     this.broadcast(MESSAGE_TYPES.GAME_OVER, gameOverMessage);
+  }
+
+  private handleCallMeeting(client: Client, message: CallMeetingMessage) {
+    const callerSessionId = client.sessionId;
+
+    // Validate the caller exists and is alive
+    const caller = this.state.players.get(callerSessionId);
+    if (!caller || caller.state !== PlayerState.Alive) {
+      const response: MeetingCalledMessage = {
+        initiatorSessionId: callerSessionId,
+        success: false,
+        reason: "You are not alive",
+      };
+      client.send(MESSAGE_TYPES.MEETING_CALLED, response);
+      return;
+    }
+
+    // Attempt to call the meeting
+    const result = this.meetingSystem.callMeeting(callerSessionId);
+
+    // Send result to the caller
+    const response: MeetingCalledMessage = {
+      initiatorSessionId: callerSessionId,
+      success: result.success,
+      reason: result.reason,
+    };
+    client.send(MESSAGE_TYPES.MEETING_CALLED, response);
+
+    // If meeting was successfully started, notify all clients
+    if (result.success) {
+      // Get meeting positions for all living players
+      const meetingPositions: Array<{ sessionId: string; x: number; y: number }> = [];
+      this.state.players.forEach((player, sessionId) => {
+        if (player.state === PlayerState.Alive) {
+          meetingPositions.push({
+            sessionId,
+            x: player.x,
+            y: player.y,
+          });
+        }
+      });
+
+      const startedMessage: MeetingStartedMessage = {
+        initiatorSessionId: callerSessionId,
+        discussionEndTime: this.meetingSystem.getDiscussionEndTime(),
+        meetingPositions,
+      };
+      this.broadcast(MESSAGE_TYPES.MEETING_STARTED, startedMessage);
+
+      // Send meeting state to all clients
+      this.broadcastMeetingState();
+    }
+  }
+
+  private handleMeetingEnded() {
+    // Transition from discussion to voting phase
+    // For now, we'll just broadcast the meeting ended message
+    // The voting system will handle the actual voting phase
+    this.broadcast(MESSAGE_TYPES.MEETING_ENDED, {});
+
+    // Send updated meeting state to all clients
+    this.broadcastMeetingState();
+  }
+
+  private broadcastMeetingState() {
+    this.state.players.forEach((player, sessionId) => {
+      const targetClient = this.clients.find((c) => c.sessionId === sessionId);
+      if (targetClient) {
+        const meetingState = this.meetingSystem.getMeetingState(sessionId);
+        targetClient.send(MESSAGE_TYPES.MEETING_STATE, meetingState);
+      }
+    });
   }
 }

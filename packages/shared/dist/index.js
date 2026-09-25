@@ -90,4 +90,9 @@ exports.MESSAGE_TYPES = {
     KILL: "kill",
     KILL_RESULT: "killResult",
     GAME_OVER: "gameOver",
+    CALL_MEETING: "callMeeting",
+    MEETING_CALLED: "meetingCalled",
+    MEETING_STARTED: "meetingStarted",
+    MEETING_ENDED: "meetingEnded",
+    MEETING_STATE: "meetingState",
 };

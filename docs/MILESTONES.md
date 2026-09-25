@@ -1413,7 +1413,7 @@ M2  Lobby, unique colors, and ready flow               COMPLETED
 M3  Match lifecycle and private role assignment        COMPLETED
 M4  Map boundaries and collision                       COMPLETED
 M5  Kill system, elimination, and basic victory        COMPLETED
-M6  Emergency meetings and discussion phase            NOT STARTED
+M6  Emergency meetings and discussion phase            COMPLETED
 M7  Voting, ejection, and complete victory flow        NOT STARTED
 M8  Vent network and Killer traversal                  NOT STARTED
 M9  Mobile controls and responsive UI                  NOT STARTED

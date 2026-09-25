@@ -89,6 +89,11 @@ export const MESSAGE_TYPES = {
   KILL: "kill",
   KILL_RESULT: "killResult",
   GAME_OVER: "gameOver",
+  CALL_MEETING: "callMeeting",
+  MEETING_CALLED: "meetingCalled",
+  MEETING_STARTED: "meetingStarted",
+  MEETING_ENDED: "meetingEnded",
+  MEETING_STATE: "meetingState",
 } as const;
 
 export type MessageType = (typeof MESSAGE_TYPES)[keyof typeof MESSAGE_TYPES];
@@ -166,4 +171,35 @@ export interface KillResultMessage {
 export interface GameOverMessage {
   winner: PlayerRole | null;
   reason: string;
+}
+
+export interface CallMeetingMessage {
+  // No payload needed - just a request to call a meeting
+}
+
+export interface MeetingCalledMessage {
+  initiatorSessionId: string;
+  success: boolean;
+  reason?: string;
+}
+
+export interface MeetingStartedMessage {
+  initiatorSessionId: string;
+  discussionEndTime: number; // Server timestamp when discussion ends
+  meetingPositions: Array<{
+    sessionId: string;
+    x: number;
+    y: number;
+  }>;
+}
+
+export interface MeetingEndedMessage {
+  // Transition to voting phase
+}
+
+export interface MeetingStateMessage {
+  phase: "discussion" | "voting" | null;
+  initiatorSessionId: string | null;
+  discussionEndTime: number | null;
+  meetingsRemaining: number; // For the local player
 }

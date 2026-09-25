@@ -54,6 +54,11 @@ export declare const MESSAGE_TYPES: {
     readonly KILL: "kill";
     readonly KILL_RESULT: "killResult";
     readonly GAME_OVER: "gameOver";
+    readonly CALL_MEETING: "callMeeting";
+    readonly MEETING_CALLED: "meetingCalled";
+    readonly MEETING_STARTED: "meetingStarted";
+    readonly MEETING_ENDED: "meetingEnded";
+    readonly MEETING_STATE: "meetingState";
 };
 export type MessageType = (typeof MESSAGE_TYPES)[keyof typeof MESSAGE_TYPES];
 export interface MoveMessage {
@@ -116,5 +121,29 @@ export interface KillResultMessage {
 export interface GameOverMessage {
     winner: PlayerRole | null;
     reason: string;
+}
+export interface CallMeetingMessage {
+}
+export interface MeetingCalledMessage {
+    initiatorSessionId: string;
+    success: boolean;
+    reason?: string;
+}
+export interface MeetingStartedMessage {
+    initiatorSessionId: string;
+    discussionEndTime: number;
+    meetingPositions: Array<{
+        sessionId: string;
+        x: number;
+        y: number;
+    }>;
+}
+export interface MeetingEndedMessage {
+}
+export interface MeetingStateMessage {
+    phase: "discussion" | "voting" | null;
+    initiatorSessionId: string | null;
+    discussionEndTime: number | null;
+    meetingsRemaining: number;
 }
 //# sourceMappingURL=index.d.ts.map

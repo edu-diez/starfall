@@ -46,7 +46,7 @@ export class KillSystem {
    * Returns result with success status and optional error reason
    */
   attemptKill(killerSessionId: string, targetSessionId: string): KillResult {
-    // Validate phase - only allowed during playing
+    // Validate phase - only allowed during playing (not during meeting)
     if (this.state.phase !== GamePhase.Playing) {
       return { success: false, reason: "Kill only allowed during playing phase" };
     }
