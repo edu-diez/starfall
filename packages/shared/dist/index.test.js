@@ -16,6 +16,8 @@ const index_1 = require("../src/index");
         (0, vitest_1.expect)(index_1.GamePhase.Lobby).toBe("lobby");
         (0, vitest_1.expect)(index_1.GamePhase.Playing).toBe("playing");
         (0, vitest_1.expect)(index_1.GamePhase.Meeting).toBe("meeting");
+        (0, vitest_1.expect)(index_1.GamePhase.Voting).toBe("voting");
+        (0, vitest_1.expect)(index_1.GamePhase.ResolvingVote).toBe("resolvingVote");
         (0, vitest_1.expect)(index_1.GamePhase.GameOver).toBe("gameover");
     });
     (0, vitest_1.it)("exports GAME_CONFIG constants", () => {
@@ -42,6 +44,8 @@ const index_1 = require("../src/index");
         (0, vitest_1.expect)(index_1.MESSAGE_TYPES.PLAYER_JOINED).toBe("playerJoined");
         (0, vitest_1.expect)(index_1.MESSAGE_TYPES.PLAYER_LEFT).toBe("playerLeft");
         (0, vitest_1.expect)(index_1.MESSAGE_TYPES.ERROR).toBe("error");
+        (0, vitest_1.expect)(index_1.MESSAGE_TYPES.VOTE).toBe("vote");
+        (0, vitest_1.expect)(index_1.MESSAGE_TYPES.VOTING_RESULTS).toBe("votingResults");
     });
     (0, vitest_1.it)("MoveMessage type works correctly", () => {
         const msg = {

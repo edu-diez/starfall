@@ -55,6 +55,42 @@ export class MatchLifecycleSystem {
   }
 
   /**
+   * Transition from a discussion meeting into voting.
+   */
+  startVoting(): boolean {
+    if (this.state.phase !== GamePhase.Meeting) {
+      return false;
+    }
+
+    this.state.phase = GamePhase.Voting;
+    return true;
+  }
+
+  /**
+   * Transition from active voting into result publication.
+   */
+  startVoteResolution(): boolean {
+    if (this.state.phase !== GamePhase.Voting) {
+      return false;
+    }
+
+    this.state.phase = GamePhase.ResolvingVote;
+    return true;
+  }
+
+  /**
+   * Resume normal gameplay after an unresolved vote result.
+   */
+  resumePlayingAfterVote(): boolean {
+    if (this.state.phase !== GamePhase.ResolvingVote) {
+      return false;
+    }
+
+    this.state.phase = GamePhase.Playing;
+    return true;
+  }
+
+  /**
    * End the match and transition to GameOver phase
    */
   endMatch(): void {
@@ -69,6 +105,13 @@ export class MatchLifecycleSystem {
     this.state.phase = GamePhase.Lobby;
     this.state.matchStartTime = 0;
     this.state.meetingEndTime = 0;
+    this.state.voteDeadline = 0;
+    this.state.voteResultsEndTime = 0;
+    this.state.voteSubmitted.clear();
+    this.state.voteTotals.clear();
+    this.state.abstainVotes = 0;
+    this.state.ejectedPlayerId = null;
+    this.state.ejectedPlayerRole = null;
     this.state.winner = null;
     this.state.endReason = null;
 
@@ -94,7 +137,9 @@ export class MatchLifecycleSystem {
   isMatchInProgress(): boolean {
     return (
       this.state.phase === GamePhase.Playing ||
-      this.state.phase === GamePhase.Meeting
+      this.state.phase === GamePhase.Meeting ||
+      this.state.phase === GamePhase.Voting ||
+      this.state.phase === GamePhase.ResolvingVote
     );
   }
 

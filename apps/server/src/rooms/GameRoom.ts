@@ -22,6 +22,10 @@ import {
   MeetingCalledMessage,
   MeetingStartedMessage,
   MeetingStateMessage,
+  VoteMessage,
+  VoteSubmittedMessage,
+  VotingStartedMessage,
+  VotingResultsMessage,
 } from "@starfall/shared";
 import { LobbySystem } from "../systems/LobbySystem";
 import { ColorSystem } from "../systems/ColorSystem";
@@ -31,6 +35,7 @@ import { CollisionSystem } from "../systems/CollisionSystem";
 import { KillSystem, DefaultClock } from "../systems/KillSystem";
 import { VictorySystem } from "../systems/VictorySystem";
 import { MeetingSystem } from "../systems/MeetingSystem";
+import { VotingSystem } from "../systems/VotingSystem";
 
 export class GameRoom extends Room<GameRoomState> {
   override maxClients = GAME_CONFIG.MAX_PLAYERS;
@@ -56,6 +61,7 @@ export class GameRoom extends Room<GameRoomState> {
   private killSystem!: KillSystem;
   private victorySystem!: VictorySystem;
   private meetingSystem!: MeetingSystem;
+  private votingSystem!: VotingSystem;
 
   override onCreate(options: any) {
     this.setState(new GameRoomState());
@@ -70,6 +76,7 @@ export class GameRoom extends Room<GameRoomState> {
     this.killSystem = new KillSystem(this.state, this.roleAssignmentSystem, new DefaultClock());
     this.victorySystem = new VictorySystem(this.state, this.roleAssignmentSystem);
     this.meetingSystem = new MeetingSystem(this.state, new DefaultClock());
+    this.votingSystem = new VotingSystem(this.state, this.roleAssignmentSystem, new DefaultClock());
 
     this.onMessage(MESSAGE_TYPES.JOIN, (client: Client, message: any) => {
       this.handleJoin(client, message);
@@ -121,6 +128,10 @@ export class GameRoom extends Room<GameRoomState> {
       },
     );
 
+    this.onMessage(MESSAGE_TYPES.VOTE, (client: Client, message: VoteMessage) => {
+      this.handleVote(client, message);
+    });
+
     // Start the fixed-rate simulation loop
     this.startSimulationLoop();
   }
@@ -161,8 +172,16 @@ export class GameRoom extends Room<GameRoomState> {
     // Update meeting system (checks for discussion timeout)
     const meetingEnded = this.meetingSystem.update();
     if (meetingEnded) {
-      // Discussion ended, transition to voting phase
       this.handleMeetingEnded();
+    }
+
+    const voteResolution = this.votingSystem.update();
+    if (voteResolution) {
+      this.handleVoteResolution(voteResolution);
+    }
+
+    if (this.votingSystem.finishResults()) {
+      this.handleVoteResultsFinished();
     }
 
     // Only simulate movement during playing phase
@@ -273,6 +292,7 @@ export class GameRoom extends Room<GameRoomState> {
     if (player) {
       this.lobbySystem.handlePlayerLeave(client.sessionId);
       this.playerInputs.delete(client.sessionId);
+      this.votingSystem.removePlayer(client.sessionId);
       this.broadcast(MESSAGE_TYPES.PLAYER_LEFT, {
         sessionId: client.sessionId,
       });
@@ -291,8 +311,8 @@ export class GameRoom extends Room<GameRoomState> {
       return;
     }
 
-    // Reject movement during meeting phase
-    if (this.state.phase === GamePhase.Meeting) {
+    // Movement is only allowed during normal gameplay.
+    if (this.state.phase !== GamePhase.Playing) {
       return;
     }
 
@@ -411,8 +431,10 @@ export class GameRoom extends Room<GameRoomState> {
       return;
     }
 
-    // Reset meeting system for new match
+    // Reset match-private systems for the new match.
     this.meetingSystem.reset();
+    this.votingSystem.reset();
+    this.victorySystem.reset();
 
     // Assign roles privately
     const roleAssignments = this.roleAssignmentSystem.assignRoles();
@@ -560,13 +582,67 @@ export class GameRoom extends Room<GameRoomState> {
   }
 
   private handleMeetingEnded() {
-    // Transition from discussion to voting phase
-    // For now, we'll just broadcast the meeting ended message
-    // The voting system will handle the actual voting phase
-    this.broadcast(MESSAGE_TYPES.MEETING_ENDED, {});
+    if (!this.matchLifecycleSystem.startVoting() || !this.votingSystem.startVoting()) {
+      return;
+    }
 
-    // Send updated meeting state to all clients
+    this.clearAllPlayerInputs();
+    const startedMessage: VotingStartedMessage = {
+      votingDeadline: this.votingSystem.getVotingDeadline(),
+      eligibleVoterIds: this.votingSystem.getEligibleVoterIds(),
+    };
+    this.broadcast(MESSAGE_TYPES.MEETING_ENDED, {});
+    this.broadcast(MESSAGE_TYPES.VOTING_STARTED, startedMessage);
     this.broadcastMeetingState();
+  }
+
+  private handleVote(client: Client, message: VoteMessage) {
+    const targetSessionId = message?.targetSessionId;
+    if (targetSessionId !== null && typeof targetSessionId !== "string") {
+      client.send(MESSAGE_TYPES.VOTE_SUBMITTED, {
+        success: false,
+        reason: "Vote target must be a player or abstention",
+      } as VoteSubmittedMessage);
+      return;
+    }
+
+    const result = this.votingSystem.submitVote(client.sessionId, targetSessionId);
+    client.send(MESSAGE_TYPES.VOTE_SUBMITTED, result as VoteSubmittedMessage);
+  }
+
+  private handleVoteResolution(resolution: import("../systems/VotingSystem").VoteResolution) {
+    if (!this.matchLifecycleSystem.startVoteResolution()) {
+      return;
+    }
+
+    const totals = Object.fromEntries(resolution.totals);
+    const resultMessage: VotingResultsMessage = {
+      totals,
+      abstainVotes: resolution.abstainVotes,
+      ejectedSessionId: resolution.ejectedSessionId,
+      ejectedRole: resolution.ejectedRole,
+      resultsEndTime: resolution.resultsEndTime,
+    };
+    this.broadcast(MESSAGE_TYPES.VOTING_RESULTS, resultMessage);
+
+    this.victorySystem.evaluate();
+    if (this.victorySystem.isMatchEnded()) {
+      this.handleGameOver();
+    }
+  }
+
+  private handleVoteResultsFinished() {
+    if (this.victorySystem.isMatchEnded()) {
+      return;
+    }
+
+    if (this.matchLifecycleSystem.resumePlayingAfterVote()) {
+      this.clearAllPlayerInputs();
+    }
+  }
+
+  private clearAllPlayerInputs() {
+    this.playerInputs.clear();
   }
 
   private broadcastMeetingState() {

@@ -33,6 +33,8 @@ var GamePhase;
     GamePhase["AssigningRoles"] = "assigningRoles";
     GamePhase["Playing"] = "playing";
     GamePhase["Meeting"] = "meeting";
+    GamePhase["Voting"] = "voting";
+    GamePhase["ResolvingVote"] = "resolvingVote";
     GamePhase["GameOver"] = "gameover";
 })(GamePhase || (exports.GamePhase = GamePhase = {}));
 // Re-export map types and functions
@@ -47,6 +49,7 @@ exports.GAME_CONFIG = {
     MEETING_COOLDOWN: 60, // seconds
     DISCUSSION_TIME: 30, // seconds
     VOTING_TIME: 60, // seconds
+    VOTE_RESULTS_TIME: 5, // seconds
     MAX_PLAYERS: 10,
     MIN_PLAYERS: 4,
 };
@@ -95,4 +98,8 @@ exports.MESSAGE_TYPES = {
     MEETING_STARTED: "meetingStarted",
     MEETING_ENDED: "meetingEnded",
     MEETING_STATE: "meetingState",
+    VOTE: "vote",
+    VOTE_SUBMITTED: "voteSubmitted",
+    VOTING_STARTED: "votingStarted",
+    VOTING_RESULTS: "votingResults",
 };

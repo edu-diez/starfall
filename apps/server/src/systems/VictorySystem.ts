@@ -24,8 +24,11 @@ export class VictorySystem {
    * Returns true if the match has ended, false otherwise
    */
   evaluate(): boolean {
-    // Only evaluate during playing phase
-    if (this.state.phase !== GamePhase.Playing) {
+    // Vote ejections are evaluated during result resolution; kills during play.
+    if (
+      this.state.phase !== GamePhase.Playing &&
+      this.state.phase !== GamePhase.ResolvingVote
+    ) {
       return false;
     }
 

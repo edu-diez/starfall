@@ -16,6 +16,8 @@ export enum GamePhase {
   AssigningRoles = "assigningRoles",
   Playing = "playing",
   Meeting = "meeting",
+  Voting = "voting",
+  ResolvingVote = "resolvingVote",
   GameOver = "gameover",
 }
 
@@ -42,6 +44,7 @@ export const GAME_CONFIG = {
   MEETING_COOLDOWN: 60, // seconds
   DISCUSSION_TIME: 30, // seconds
   VOTING_TIME: 60, // seconds
+  VOTE_RESULTS_TIME: 5, // seconds
   MAX_PLAYERS: 10,
   MIN_PLAYERS: 4,
 } as const;
@@ -94,6 +97,10 @@ export const MESSAGE_TYPES = {
   MEETING_STARTED: "meetingStarted",
   MEETING_ENDED: "meetingEnded",
   MEETING_STATE: "meetingState",
+  VOTE: "vote",
+  VOTE_SUBMITTED: "voteSubmitted",
+  VOTING_STARTED: "votingStarted",
+  VOTING_RESULTS: "votingResults",
 } as const;
 
 export type MessageType = (typeof MESSAGE_TYPES)[keyof typeof MESSAGE_TYPES];
@@ -202,4 +209,26 @@ export interface MeetingStateMessage {
   initiatorSessionId: string | null;
   discussionEndTime: number | null;
   meetingsRemaining: number; // For the local player
+}
+
+export interface VoteMessage {
+  targetSessionId: string | null;
+}
+
+export interface VoteSubmittedMessage {
+  success: boolean;
+  reason?: string;
+}
+
+export interface VotingStartedMessage {
+  votingDeadline: number;
+  eligibleVoterIds: string[];
+}
+
+export interface VotingResultsMessage {
+  totals: Record<string, number>;
+  abstainVotes: number;
+  ejectedSessionId: string | null;
+  ejectedRole: PlayerRole | null;
+  resultsEndTime: number;
 }

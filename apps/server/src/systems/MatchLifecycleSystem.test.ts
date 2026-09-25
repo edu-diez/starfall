@@ -111,6 +111,23 @@ describe("MatchLifecycleSystem", () => {
     expect(state.phase).toBe(GamePhase.Lobby);
   });
 
+  it("transitions through voting and returns to playing", () => {
+    state.phase = GamePhase.Meeting;
+    expect(matchLifecycleSystem.startVoting()).toBe(true);
+    expect(state.phase).toBe(GamePhase.Voting);
+    expect(matchLifecycleSystem.startVoteResolution()).toBe(true);
+    expect(state.phase).toBe(GamePhase.ResolvingVote);
+    expect(matchLifecycleSystem.resumePlayingAfterVote()).toBe(true);
+    expect(state.phase).toBe(GamePhase.Playing);
+  });
+
+  it("rejects invalid voting transitions", () => {
+    expect(matchLifecycleSystem.startVoting()).toBe(false);
+    state.phase = GamePhase.Playing;
+    expect(matchLifecycleSystem.startVoteResolution()).toBe(false);
+    expect(matchLifecycleSystem.resumePlayingAfterVote()).toBe(false);
+  });
+
   it("endMatch transitions to GameOver phase", () => {
     state.phase = GamePhase.Playing;
     matchLifecycleSystem.endMatch();

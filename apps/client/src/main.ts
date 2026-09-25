@@ -13,6 +13,11 @@ import {
   LobbyStateMessage,
   MatchStartMessage,
   RoleAssignmentMessage,
+  MeetingStartedMessage,
+  MeetingStateMessage,
+  VotingStartedMessage,
+  VotingResultsMessage,
+  VoteMessage,
   COLORS,
   STARFALL_MAP,
   CollisionRect,
@@ -36,6 +41,15 @@ interface GameRoomState {
   phase: GamePhase;
   matchStartTime: number;
   meetingEndTime: number;
+  voteDeadline: number;
+  voteResultsEndTime: number;
+  voteSubmitted: Map<string, boolean>;
+  voteTotals: Map<string, number>;
+  abstainVotes: number;
+  ejectedPlayerId: string | null;
+  ejectedPlayerRole: PlayerRole | null;
+  winner: PlayerRole | null;
+  endReason: string | null;
 }
 
 // Game client class
@@ -60,6 +74,8 @@ class GameClient {
   private startEligibilityEl: HTMLElement | null = null;
   private roleRevealUI: HTMLElement | null = null;
   private startMatchBtn: HTMLButtonElement | null = null;
+  private phaseUI: HTMLElement | null = null;
+  private phaseTimer: number | null = null;
 
   // Debug mode
   private debugMode: boolean = false;
@@ -435,6 +451,80 @@ class GameClient {
     this.startInputSending();
   }
 
+  private showPhaseUI(content: string): HTMLElement {
+    this.hidePhaseUI();
+    const panel = document.createElement("div");
+    panel.id = "match-phase-ui";
+    panel.style.cssText = `
+      position: fixed; inset: 0; z-index: 900; display: flex;
+      align-items: center; justify-content: center; background: rgba(15, 23, 42, 0.92);
+      pointer-events: auto; padding: 24px;
+    `;
+    panel.innerHTML = `<div style="width: min(560px, 100%); max-height: 90vh; overflow: auto; background: #1f2937; border: 1px solid #475569; border-radius: 12px; padding: 28px; text-align: center; color: #f8fafc;">${content}</div>`;
+    document.body.appendChild(panel);
+    this.phaseUI = panel;
+    return panel;
+  }
+
+  private hidePhaseUI() {
+    if (this.phaseTimer !== null) {
+      clearInterval(this.phaseTimer);
+      this.phaseTimer = null;
+    }
+    this.phaseUI?.remove();
+    this.phaseUI = null;
+  }
+
+  private startDeadlineTimer(element: HTMLElement, deadline: number, prefix: string) {
+    const render = () => {
+      const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      element.textContent = `${prefix}: ${remaining}s`;
+    };
+    render();
+    this.phaseTimer = window.setInterval(render, 250);
+  }
+
+  private showDiscussion(deadline: number) {
+    const panel = this.showPhaseUI(`<h1 style="margin-bottom: 12px;">Emergency Meeting</h1><p id="phase-timer" style="font-size: 24px; color: #93c5fd;"></p><p style="margin-top: 16px; color: #cbd5e1;">Discuss the evidence. Voting begins when the server timer ends.</p>`);
+    this.startDeadlineTimer(panel.querySelector("#phase-timer")!, deadline, "Discussion ends in");
+  }
+
+  private showVoting(deadline: number) {
+    const livingPlayers = [...(this.room?.state.players.values() ?? [])]
+      .filter((player) => player.state === PlayerState.Alive);
+    const candidates = livingPlayers.map((player) => `<button data-vote-target="${player.sessionId}" style="margin: 6px;">Vote ${player.name}</button>`).join("");
+    const panel = this.showPhaseUI(`<h1 style="margin-bottom: 12px;">Vote</h1><p id="phase-timer" style="font-size: 24px; color: #93c5fd;"></p><p id="vote-feedback" style="min-height: 24px; margin: 16px 0; color: #cbd5e1;">Choose a living player or abstain. You may change your vote.</p><div>${candidates}</div><button data-vote-target="" style="margin-top: 14px;">Abstain</button>`);
+    this.startDeadlineTimer(panel.querySelector("#phase-timer")!, deadline, "Voting ends in");
+    panel.querySelectorAll<HTMLButtonElement>("button[data-vote-target]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const rawTarget = button.dataset.voteTarget ?? "";
+        this.submitVote(rawTarget || null);
+      });
+    });
+  }
+
+  private submitVote(targetSessionId: string | null) {
+    if (!this.room) return;
+    const message: VoteMessage = { targetSessionId };
+    this.room.send(MESSAGE_TYPES.VOTE, message);
+  }
+
+  private showVoteResults(message: VotingResultsMessage) {
+    const playerName = (sessionId: string) => this.room?.state.players.get(sessionId)?.name ?? sessionId;
+    const totals = Object.entries(message.totals)
+      .map(([sessionId, total]) => `<li>${playerName(sessionId)}: ${total}</li>`)
+      .join("") || "<li>No player votes</li>";
+    const ejection = message.ejectedSessionId
+      ? `<p style="margin-top: 16px; color: #fca5a5;"><strong>${playerName(message.ejectedSessionId)}</strong> was ejected. Role: <strong>${message.ejectedRole}</strong>.</p>`
+      : "<p style=\"margin-top: 16px; color: #cbd5e1;\">No player was ejected.</p>";
+    const panel = this.showPhaseUI(`<h1>Vote Results</h1><ul style="list-style: none; margin: 16px 0;">${totals}</ul><p>Abstentions: ${message.abstainVotes}</p>${ejection}<p id="phase-timer" style="margin-top: 20px; color: #93c5fd;"></p>`);
+    this.startDeadlineTimer(panel.querySelector("#phase-timer")!, message.resultsEndTime, "Returning to play in");
+  }
+
+  private showGameOver(winner: PlayerRole | null, reason: string) {
+    this.showPhaseUI(`<h1 style="color: ${winner === PlayerRole.Killer ? "#f87171" : "#86efac"};">${winner === PlayerRole.Killer ? "Killer Victory" : "Crewmate Victory"}</h1><p style="margin-top: 16px; color: #cbd5e1;">${reason}</p>`);
+  }
+
   private handleKeyDown(e: KeyboardEvent) {
     // Prevent default for game keys
     if (
@@ -579,6 +669,44 @@ class GameClient {
       this.showRoleReveal(message.role);
     });
 
+    this.room.onMessage(MESSAGE_TYPES.MEETING_STARTED, (message: MeetingStartedMessage) => {
+      this.lastSentInput = { x: 0, y: 0 };
+      this.showDiscussion(message.discussionEndTime);
+    });
+
+    this.room.onMessage(MESSAGE_TYPES.MEETING_STATE, (message: MeetingStateMessage) => {
+      if (message.phase === "discussion" && message.discussionEndTime && !this.phaseUI) {
+        this.showDiscussion(message.discussionEndTime);
+      }
+    });
+
+    this.room.onMessage(MESSAGE_TYPES.VOTING_STARTED, (message: VotingStartedMessage) => {
+      this.showVoting(message.votingDeadline);
+    });
+
+    this.room.onMessage(MESSAGE_TYPES.VOTE_SUBMITTED, (message: { success: boolean; reason?: string }) => {
+      const feedback = this.phaseUI?.querySelector("#vote-feedback");
+      if (feedback) {
+        feedback.textContent = message.success ? "Vote submitted. You may still change it." : message.reason ?? "Vote rejected.";
+      }
+    });
+
+    this.room.onMessage(MESSAGE_TYPES.VOTING_RESULTS, (message: VotingResultsMessage) => {
+      this.showVoteResults(message);
+    });
+
+    this.room.onMessage(MESSAGE_TYPES.GAME_OVER, (message: { winner: PlayerRole | null; reason: string }) => {
+      this.showGameOver(message.winner, message.reason);
+      this.stopInputSending();
+    });
+
+    this.room.onStateChange((state) => {
+      this.renderPlayersList(state.players);
+      if (state.phase === GamePhase.Playing && this.phaseUI) {
+        this.hidePhaseUI();
+      }
+    });
+
     this.room.onMessage(MESSAGE_TYPES.ERROR, (message) => {
       console.error("Server error:", message);
       this.updateConnectionStatus(`Error: ${message.message}`, "status-error");
@@ -592,6 +720,7 @@ class GameClient {
       this.lobbyUI.classList.remove("hidden");
       this.stopInputSending();
       this.hideRoleReveal();
+      this.hidePhaseUI();
       this.myRole = null;
     });
 

@@ -777,6 +777,16 @@ Whether a player's remaining meeting count is shown publicly or privately must f
 
 # Milestone 7: Voting, Ejection, and Complete Victory Flow
 
+### Implementation decisions
+
+- Status: Accepted
+- Date: 2026-09-25
+- Milestone: M7
+- Voting ends early when every living eligible voter has submitted a current choice; otherwise the server resolves it at the authoritative deadline.
+- Before resolution, only per-player submission status is public. Individual voter-to-choice mappings remain server-private.
+- Results publish aggregate candidate totals, abstentions, and any ejected player. Results remain visible for five seconds before play resumes when no side has won.
+- The ejected player's role is revealed after resolution, as required by `GAME_SPEC.md`.
+
 ## Goal
 
 Complete the core social-deduction loop by allowing living players to vote, resolving ties and abstentions, ejecting a player when applicable, and evaluating both victory conditions.
@@ -1414,7 +1424,7 @@ M3  Match lifecycle and private role assignment        COMPLETED
 M4  Map boundaries and collision                       COMPLETED
 M5  Kill system, elimination, and basic victory        COMPLETED
 M6  Emergency meetings and discussion phase            COMPLETED
-M7  Voting, ejection, and complete victory flow        NOT STARTED
+M7  Voting, ejection, and complete victory flow        COMPLETE
 M8  Vent network and Killer traversal                  NOT STARTED
 M9  Mobile controls and responsive UI                  NOT STARTED
 M10 Accounts and persistence                           NOT STARTED

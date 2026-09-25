@@ -23,6 +23,13 @@ export class GameRoomState extends Schema {
   @type("string") phase: GamePhase = GamePhase.Lobby;
   @type("number") matchStartTime: number = 0;
   @type("number") meetingEndTime: number = 0;
+  @type("number") voteDeadline: number = 0;
+  @type("number") voteResultsEndTime: number = 0;
+  @type({ map: "boolean" }) voteSubmitted = new MapSchema<boolean>();
+  @type({ map: "number" }) voteTotals = new MapSchema<number>();
+  @type("number") abstainVotes: number = 0;
+  @type("string") ejectedPlayerId: string | null = null;
+  @type("string") ejectedPlayerRole: string | null = null;
   @type("string") winner: string | null = null;
   @type("string") endReason: string | null = null;
 

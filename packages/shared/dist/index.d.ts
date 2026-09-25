@@ -12,6 +12,8 @@ export declare enum GamePhase {
     AssigningRoles = "assigningRoles",
     Playing = "playing",
     Meeting = "meeting",
+    Voting = "voting",
+    ResolvingVote = "resolvingVote",
     GameOver = "gameover"
 }
 export interface Vec2 {
@@ -33,6 +35,7 @@ export declare const GAME_CONFIG: {
     readonly MEETING_COOLDOWN: 60;
     readonly DISCUSSION_TIME: 30;
     readonly VOTING_TIME: 60;
+    readonly VOTE_RESULTS_TIME: 5;
     readonly MAX_PLAYERS: 10;
     readonly MIN_PLAYERS: 4;
 };
@@ -59,6 +62,10 @@ export declare const MESSAGE_TYPES: {
     readonly MEETING_STARTED: "meetingStarted";
     readonly MEETING_ENDED: "meetingEnded";
     readonly MEETING_STATE: "meetingState";
+    readonly VOTE: "vote";
+    readonly VOTE_SUBMITTED: "voteSubmitted";
+    readonly VOTING_STARTED: "votingStarted";
+    readonly VOTING_RESULTS: "votingResults";
 };
 export type MessageType = (typeof MESSAGE_TYPES)[keyof typeof MESSAGE_TYPES];
 export interface MoveMessage {
@@ -145,5 +152,23 @@ export interface MeetingStateMessage {
     initiatorSessionId: string | null;
     discussionEndTime: number | null;
     meetingsRemaining: number;
+}
+export interface VoteMessage {
+    targetSessionId: string | null;
+}
+export interface VoteSubmittedMessage {
+    success: boolean;
+    reason?: string;
+}
+export interface VotingStartedMessage {
+    votingDeadline: number;
+    eligibleVoterIds: string[];
+}
+export interface VotingResultsMessage {
+    totals: Record<string, number>;
+    abstainVotes: number;
+    ejectedSessionId: string | null;
+    ejectedRole: PlayerRole | null;
+    resultsEndTime: number;
 }
 //# sourceMappingURL=index.d.ts.map

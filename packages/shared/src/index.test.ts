@@ -31,6 +31,8 @@ describe("Shared package", () => {
     expect(GamePhase.Lobby).toBe("lobby");
     expect(GamePhase.Playing).toBe("playing");
     expect(GamePhase.Meeting).toBe("meeting");
+    expect(GamePhase.Voting).toBe("voting");
+    expect(GamePhase.ResolvingVote).toBe("resolvingVote");
     expect(GamePhase.GameOver).toBe("gameover");
   });
 
@@ -61,6 +63,8 @@ describe("Shared package", () => {
     expect(MESSAGE_TYPES.PLAYER_JOINED).toBe("playerJoined");
     expect(MESSAGE_TYPES.PLAYER_LEFT).toBe("playerLeft");
     expect(MESSAGE_TYPES.ERROR).toBe("error");
+    expect(MESSAGE_TYPES.VOTE).toBe("vote");
+    expect(MESSAGE_TYPES.VOTING_RESULTS).toBe("votingResults");
   });
 
   it("MoveMessage type works correctly", () => {

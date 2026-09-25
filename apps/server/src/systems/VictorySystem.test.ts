@@ -170,6 +170,15 @@ describe("VictorySystem", () => {
     expect(result).toBe(false);
   });
 
+  it("detects Crewmate victory for a Killer ejected during vote resolution", () => {
+    setupPlayers(1, 3);
+    state.players.get("killer-0")!.state = PlayerState.Ejected;
+    state.phase = GamePhase.ResolvingVote;
+
+    expect(victorySystem.evaluate()).toBe(true);
+    expect(victorySystem.getWinner()).toBe(PlayerRole.Crewmate);
+  });
+
   it("does not evaluate when in game over phase", () => {
     state.phase = GamePhase.GameOver;
     setupPlayers(1, 1);

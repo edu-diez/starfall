@@ -186,7 +186,12 @@ export class MeetingSystem {
    */
   getMeetingState(sessionId: string): MeetingState {
     return {
-      phase: this.state.phase === GamePhase.Meeting ? "discussion" : null,
+      phase:
+        this.state.phase === GamePhase.Meeting
+          ? "discussion"
+          : this.state.phase === GamePhase.Voting
+            ? "voting"
+            : null,
       initiatorSessionId: this.meetingInitiator,
       discussionEndTime: this.state.phase === GamePhase.Meeting ? this.discussionEndTime : null,
       meetingsRemaining: this.getMeetingsRemaining(sessionId),
