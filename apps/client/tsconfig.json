@@ -15,9 +15,9 @@
     "isolatedModules": true,
     "baseUrl": ".",
     "paths": {
-      "@starfall/shared": ["../packages/shared/src"]
+      "@starfall/shared": ["../../packages/shared/src"]
     }
   },
-  "include": ["src/**/*", "vite.config.ts"],
+  "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
 }

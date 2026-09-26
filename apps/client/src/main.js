@@ -48,6 +48,7 @@ class GameClient {
     touchInput = new TouchInputAdapter(this.inputController);
     lastSentInput = { x: 0, y: 0 };
     inputSendInterval = null;
+    reconnecting = false;
     INPUT_SEND_RATE = 60; // Hz - match server tick rate
     constructor() {
         this.client = new Client("ws://localhost:2567");
@@ -659,6 +660,41 @@ class GameClient {
             this.updateConnectionStatus("Connection Failed", "status-error");
         }
     }
+    async reconnect(disconnectedRoom) {
+        if (this.reconnecting || this.room !== disconnectedRoom)
+            return;
+        this.reconnecting = true;
+        this.stopInputSending();
+        this.lastSentInput = { x: 0, y: 0 };
+        this.inputController.setKeyboardMovement({ x: 0, y: 0 });
+        this.inputController.clearTouchMovement();
+        this.updateConnectionStatus("Reconnecting...", "status-connecting");
+        try {
+            const restoredRoom = await this.client.reconnect(disconnectedRoom.reconnectionToken);
+            if (this.room !== disconnectedRoom)
+                return;
+            this.room = restoredRoom;
+            this.setupRoomListeners();
+            this.mySessionId = restoredRoom.sessionId;
+            this.updateConnectionStatus("Reconnected", "status-connected");
+            if (restoredRoom.state.phase === GamePhase.Playing) {
+                this.lobbyUI.classList.add("hidden");
+                this.startInputSending();
+            }
+        }
+        catch (error) {
+            console.error("Reconnection failed:", error);
+            if (this.room === disconnectedRoom) {
+                this.room = null;
+                this.myRole = null;
+                this.updateConnectionStatus("Disconnected", "status-disconnected");
+                this.lobbyUI.classList.remove("hidden");
+            }
+        }
+        finally {
+            this.reconnecting = false;
+        }
+    }
     setupRoomListeners() {
         if (!this.room)
             return;
@@ -731,6 +767,12 @@ class GameClient {
             this.updateVentUI();
             this.updateActionControls();
         });
+        this.room.onMessage(MESSAGE_TYPES.RECONNECTION_STATE, (message) => {
+            this.myRole = message.role;
+            this.lastSentInput = { x: 0, y: 0 };
+            this.updateVentUI();
+            this.updateActionControls();
+        });
         this.room.onMessage(MESSAGE_TYPES.VENT_STATE, (message) => {
             this.isVenting = message.isVenting;
             this.currentVentNodeId = message.currentNodeId;
@@ -781,21 +823,12 @@ class GameClient {
             this.playerNameInput.disabled = false;
             this.setProfileFeedback(message.message);
         });
+        const subscribedRoom = this.room;
         this.room.onLeave((code) => {
             console.log("Left room:", code);
-            this.updateConnectionStatus("Disconnected", "status-disconnected");
-            this.lobbyUI.classList.remove("hidden");
-            this.stopInputSending();
-            this.hideRoleReveal();
-            this.hidePhaseUI();
-            this.ventUI?.remove();
-            this.ventUI = null;
-            this.actionControls?.remove();
-            this.actionControls = null;
-            this.myRole = null;
-            this.isVenting = false;
-            this.currentVentNodeId = null;
-            this.connectedVentNodeIds = [];
+            if (subscribedRoom) {
+                void this.reconnect(subscribedRoom);
+            }
         });
         this.room.onError((code, message) => {
             console.error("Room error:", code, message);
