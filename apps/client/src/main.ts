@@ -21,11 +21,22 @@ import {
   VentEnterMessage,
   VentTravelMessage,
   VentStateMessage,
+  KillMessage,
+  CallMeetingMessage,
   COLORS,
   STARFALL_MAP,
   CollisionRect,
   Door,
 } from "@starfall/shared";
+import {
+  getAvailableActions,
+  PlayerInputController,
+} from "./input/InputController";
+import {
+  DesktopAction,
+  DesktopInputAdapter,
+} from "./input/DesktopInputAdapter";
+import { TouchInputAdapter } from "./input/TouchInputAdapter";
 
 // Types for Colyseus room state
 interface PlayerData {
@@ -81,6 +92,8 @@ class GameClient {
   private phaseTimer: number | null = null;
   private ventUI: HTMLElement | null = null;
   private ventFeedback: HTMLElement | null = null;
+  private actionControls: HTMLElement | null = null;
+  private touchJoystick: HTMLElement | null = null;
   private isVenting = false;
   private currentVentNodeId: string | null = null;
   private connectedVentNodeIds: string[] = [];
@@ -89,7 +102,14 @@ class GameClient {
   private debugMode: boolean = false;
 
   // Input state
-  private keysPressed = new Set<string>();
+  private readonly inputController = new PlayerInputController();
+  private readonly desktopInput = new DesktopInputAdapter(
+    this.inputController,
+    {
+      onAction: (action) => this.handleDesktopAction(action),
+    },
+  );
+  private readonly touchInput = new TouchInputAdapter(this.inputController);
   private lastSentInput: Vec2 = { x: 0, y: 0 };
   private inputSendInterval: number | null = null;
   private readonly INPUT_SEND_RATE = 60; // Hz - match server tick rate
@@ -141,9 +161,8 @@ class GameClient {
       }
     });
 
-    // Keyboard input for movement
-    window.addEventListener("keydown", (e) => this.handleKeyDown(e));
-    window.addEventListener("keyup", (e) => this.handleKeyUp(e));
+    this.desktopInput.attach();
+    this.createTouchControls();
 
     // Debug mode toggle (F3 key)
     window.addEventListener("keydown", (e) => {
@@ -301,7 +320,9 @@ class GameClient {
       transition: background 0.2s;
       display: none;
     `;
-    this.startMatchBtn.addEventListener("click", () => this.requestMatchStart());
+    this.startMatchBtn.addEventListener("click", () =>
+      this.requestMatchStart(),
+    );
     this.startMatchBtn.addEventListener("mouseenter", () => {
       this.startMatchBtn!.style.background = "#2563eb";
     });
@@ -435,7 +456,8 @@ class GameClient {
     const continueBtn = document.getElementById("role-reveal-continue");
     continueBtn?.addEventListener("click", () => this.hideRoleReveal());
     continueBtn?.addEventListener("mouseenter", () => {
-      if (continueBtn) continueBtn.style.background = isKiller ? "#dc2626" : "#059669";
+      if (continueBtn)
+        continueBtn.style.background = isKiller ? "#dc2626" : "#059669";
       if (continueBtn) continueBtn.style.transform = "scale(1.02)";
     });
     continueBtn?.addEventListener("mouseleave", () => {
@@ -483,7 +505,11 @@ class GameClient {
     this.phaseUI = null;
   }
 
-  private startDeadlineTimer(element: HTMLElement, deadline: number, prefix: string) {
+  private startDeadlineTimer(
+    element: HTMLElement,
+    deadline: number,
+    prefix: string,
+  ) {
     const render = () => {
       const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
       element.textContent = `${prefix}: ${remaining}s`;
@@ -493,22 +519,42 @@ class GameClient {
   }
 
   private showDiscussion(deadline: number) {
-    const panel = this.showPhaseUI(`<h1 style="margin-bottom: 12px;">Emergency Meeting</h1><p id="phase-timer" style="font-size: 24px; color: #93c5fd;"></p><p style="margin-top: 16px; color: #cbd5e1;">Discuss the evidence. Voting begins when the server timer ends.</p>`);
-    this.startDeadlineTimer(panel.querySelector("#phase-timer")!, deadline, "Discussion ends in");
+    const panel = this.showPhaseUI(
+      `<h1 style="margin-bottom: 12px;">Emergency Meeting</h1><p id="phase-timer" style="font-size: 24px; color: #93c5fd;"></p><p style="margin-top: 16px; color: #cbd5e1;">Discuss the evidence. Voting begins when the server timer ends.</p>`,
+    );
+    this.startDeadlineTimer(
+      panel.querySelector("#phase-timer")!,
+      deadline,
+      "Discussion ends in",
+    );
   }
 
   private showVoting(deadline: number) {
-    const livingPlayers = [...(this.room?.state.players.values() ?? [])]
-      .filter((player) => player.state === PlayerState.Alive);
-    const candidates = livingPlayers.map((player) => `<button data-vote-target="${player.sessionId}" style="margin: 6px;">Vote ${player.name}</button>`).join("");
-    const panel = this.showPhaseUI(`<h1 style="margin-bottom: 12px;">Vote</h1><p id="phase-timer" style="font-size: 24px; color: #93c5fd;"></p><p id="vote-feedback" style="min-height: 24px; margin: 16px 0; color: #cbd5e1;">Choose a living player or abstain. You may change your vote.</p><div>${candidates}</div><button data-vote-target="" style="margin-top: 14px;">Abstain</button>`);
-    this.startDeadlineTimer(panel.querySelector("#phase-timer")!, deadline, "Voting ends in");
-    panel.querySelectorAll<HTMLButtonElement>("button[data-vote-target]").forEach((button) => {
-      button.addEventListener("click", () => {
-        const rawTarget = button.dataset.voteTarget ?? "";
-        this.submitVote(rawTarget || null);
+    const livingPlayers = [...(this.room?.state.players.values() ?? [])].filter(
+      (player) => player.state === PlayerState.Alive,
+    );
+    const candidates = livingPlayers
+      .map(
+        (player) =>
+          `<button data-vote-target="${player.sessionId}" style="margin: 6px;">Vote ${player.name}</button>`,
+      )
+      .join("");
+    const panel = this.showPhaseUI(
+      `<h1 style="margin-bottom: 12px;">Vote</h1><p id="phase-timer" style="font-size: 24px; color: #93c5fd;"></p><p id="vote-feedback" style="min-height: 24px; margin: 16px 0; color: #cbd5e1;">Choose a living player or abstain. You may change your vote.</p><div>${candidates}</div><button data-vote-target="" style="margin-top: 14px;">Abstain</button>`,
+    );
+    this.startDeadlineTimer(
+      panel.querySelector("#phase-timer")!,
+      deadline,
+      "Voting ends in",
+    );
+    panel
+      .querySelectorAll<HTMLButtonElement>("button[data-vote-target]")
+      .forEach((button) => {
+        button.addEventListener("click", () => {
+          const rawTarget = button.dataset.voteTarget ?? "";
+          this.submitVote(rawTarget || null);
+        });
       });
-    });
   }
 
   private submitVote(targetSessionId: string | null) {
@@ -518,23 +564,37 @@ class GameClient {
   }
 
   private showVoteResults(message: VotingResultsMessage) {
-    const playerName = (sessionId: string) => this.room?.state.players.get(sessionId)?.name ?? sessionId;
-    const totals = Object.entries(message.totals)
-      .map(([sessionId, total]) => `<li>${playerName(sessionId)}: ${total}</li>`)
-      .join("") || "<li>No player votes</li>";
+    const playerName = (sessionId: string) =>
+      this.room?.state.players.get(sessionId)?.name ?? sessionId;
+    const totals =
+      Object.entries(message.totals)
+        .map(
+          ([sessionId, total]) => `<li>${playerName(sessionId)}: ${total}</li>`,
+        )
+        .join("") || "<li>No player votes</li>";
     const ejection = message.ejectedSessionId
       ? `<p style="margin-top: 16px; color: #fca5a5;"><strong>${playerName(message.ejectedSessionId)}</strong> was ejected. Role: <strong>${message.ejectedRole}</strong>.</p>`
-      : "<p style=\"margin-top: 16px; color: #cbd5e1;\">No player was ejected.</p>";
-    const panel = this.showPhaseUI(`<h1>Vote Results</h1><ul style="list-style: none; margin: 16px 0;">${totals}</ul><p>Abstentions: ${message.abstainVotes}</p>${ejection}<p id="phase-timer" style="margin-top: 20px; color: #93c5fd;"></p>`);
-    this.startDeadlineTimer(panel.querySelector("#phase-timer")!, message.resultsEndTime, "Returning to play in");
+      : '<p style="margin-top: 16px; color: #cbd5e1;">No player was ejected.</p>';
+    const panel = this.showPhaseUI(
+      `<h1>Vote Results</h1><ul style="list-style: none; margin: 16px 0;">${totals}</ul><p>Abstentions: ${message.abstainVotes}</p>${ejection}<p id="phase-timer" style="margin-top: 20px; color: #93c5fd;"></p>`,
+    );
+    this.startDeadlineTimer(
+      panel.querySelector("#phase-timer")!,
+      message.resultsEndTime,
+      "Returning to play in",
+    );
   }
 
   private showGameOver(winner: PlayerRole | null, reason: string) {
-    this.showPhaseUI(`<h1 style="color: ${winner === PlayerRole.Killer ? "#f87171" : "#86efac"};">${winner === PlayerRole.Killer ? "Killer Victory" : "Crewmate Victory"}</h1><p style="margin-top: 16px; color: #cbd5e1;">${reason}</p>`);
+    this.showPhaseUI(
+      `<h1 style="color: ${winner === PlayerRole.Killer ? "#f87171" : "#86efac"};">${winner === PlayerRole.Killer ? "Killer Victory" : "Crewmate Victory"}</h1><p style="margin-top: 16px; color: #cbd5e1;">${reason}</p>`,
+    );
   }
 
   private updateVentUI(message?: VentStateMessage) {
-    const canUseVents = this.myRole === PlayerRole.Killer && this.room?.state.phase === GamePhase.Playing;
+    const canUseVents =
+      this.myRole === PlayerRole.Killer &&
+      this.room?.state.phase === GamePhase.Playing;
     if (!canUseVents) {
       this.ventUI?.remove();
       this.ventUI = null;
@@ -545,83 +605,177 @@ class GameClient {
     if (!this.ventUI) {
       this.ventUI = document.createElement("div");
       this.ventUI.id = "vent-controls";
-      this.ventUI.style.cssText = "position:fixed;right:20px;bottom:20px;z-index:800;width:min(270px,calc(100vw - 40px));padding:14px;background:rgba(31,41,55,.94);border:1px solid #ef4444;border-radius:10px;color:#f8fafc;text-align:center;";
+      this.ventUI.style.cssText =
+        "position:fixed;right:20px;bottom:20px;z-index:800;width:min(270px,calc(100vw - 40px));padding:14px;background:rgba(31,41,55,.94);border:1px solid #ef4444;border-radius:10px;color:#f8fafc;text-align:center;";
       document.body.appendChild(this.ventUI);
     }
 
-    const localPlayer = this.mySessionId ? this.room?.state.players.get(this.mySessionId) : undefined;
-    const nearbyNode = !this.isVenting && localPlayer
-      ? STARFALL_MAP.ventNodes.find((node) => Math.hypot(localPlayer.x - node.x, localPlayer.y - node.y) <= node.radius)
+    const localPlayer = this.mySessionId
+      ? this.room?.state.players.get(this.mySessionId)
       : undefined;
+    const nearbyNode =
+      !this.isVenting && localPlayer
+        ? STARFALL_MAP.ventNodes.find(
+            (node) =>
+              Math.hypot(localPlayer.x - node.x, localPlayer.y - node.y) <=
+              node.radius,
+          )
+        : undefined;
     const destinations = this.connectedVentNodeIds
-      .map((nodeId) => STARFALL_MAP.ventNodes.find((node) => node.id === nodeId))
+      .map((nodeId) =>
+        STARFALL_MAP.ventNodes.find((node) => node.id === nodeId),
+      )
       .filter((node): node is NonNullable<typeof node> => Boolean(node));
 
     this.ventUI.innerHTML = this.isVenting
       ? `<strong style="color:#fca5a5;">Inside vent: ${this.currentVentNodeId}</strong><div style="margin-top:10px;display:flex;gap:6px;justify-content:center;flex-wrap:wrap;">${destinations.map((node) => `<button data-vent-travel="${node.id}">Travel to ${node.roomId}</button>`).join("")}</div><button data-vent-exit style="margin-top:10px;">Exit vent</button><p id="vent-feedback" style="min-height:18px;margin:8px 0 0;color:#cbd5e1;"></p>`
       : `<strong>Vent</strong><p style="margin:8px 0;color:#cbd5e1;">${nearbyNode ? `At ${nearbyNode.roomId} vent.` : "Approach a vent to enter."}</p>${nearbyNode ? `<button data-vent-enter="${nearbyNode.id}">Enter vent</button>` : ""}<p id="vent-feedback" style="min-height:18px;margin:8px 0 0;color:#cbd5e1;"></p>`;
     this.ventFeedback = this.ventUI.querySelector("#vent-feedback");
-    if (message?.reason && this.ventFeedback) this.ventFeedback.textContent = message.reason;
+    if (message?.reason && this.ventFeedback)
+      this.ventFeedback.textContent = message.reason;
 
-    this.ventUI.querySelector<HTMLButtonElement>("[data-vent-enter]")?.addEventListener("click", (event) => {
-      const nodeId = (event.currentTarget as HTMLButtonElement).dataset.ventEnter!;
-      this.room?.send(MESSAGE_TYPES.VENT_ENTER, { nodeId } as VentEnterMessage);
-    });
-    this.ventUI.querySelectorAll<HTMLButtonElement>("[data-vent-travel]").forEach((button) => {
-      button.addEventListener("click", () => {
-        this.room?.send(MESSAGE_TYPES.VENT_TRAVEL, { destinationNodeId: button.dataset.ventTravel! } as VentTravelMessage);
+    this.ventUI
+      .querySelector<HTMLButtonElement>("[data-vent-enter]")
+      ?.addEventListener("click", (event) => {
+        const nodeId = (event.currentTarget as HTMLButtonElement).dataset
+          .ventEnter!;
+        this.room?.send(MESSAGE_TYPES.VENT_ENTER, {
+          nodeId,
+        } as VentEnterMessage);
       });
-    });
-    this.ventUI.querySelector<HTMLButtonElement>("[data-vent-exit]")?.addEventListener("click", () => {
-      this.room?.send(MESSAGE_TYPES.VENT_EXIT, {});
-    });
+    this.ventUI
+      .querySelectorAll<HTMLButtonElement>("[data-vent-travel]")
+      .forEach((button) => {
+        button.addEventListener("click", () => {
+          this.room?.send(MESSAGE_TYPES.VENT_TRAVEL, {
+            destinationNodeId: button.dataset.ventTravel!,
+          } as VentTravelMessage);
+        });
+      });
+    this.ventUI
+      .querySelector<HTMLButtonElement>("[data-vent-exit]")
+      ?.addEventListener("click", () => {
+        this.room?.send(MESSAGE_TYPES.VENT_EXIT, {});
+      });
   }
 
-  private handleKeyDown(e: KeyboardEvent) {
-    // Prevent default for game keys
-    if (
-      [
-        "ArrowUp",
-        "ArrowDown",
-        "ArrowLeft",
-        "ArrowRight",
-        "w",
-        "a",
-        "s",
-        "d",
-        "W",
-        "A",
-        "S",
-        "D",
-      ].includes(e.key)
+  private createTouchControls() {
+    this.touchJoystick = document.createElement("div");
+    this.touchJoystick.id = "touch-joystick";
+    this.touchJoystick.setAttribute("aria-label", "Movement joystick");
+    this.touchJoystick.style.cssText = `
+      position: fixed; left: max(20px, env(safe-area-inset-left));
+      bottom: max(20px, env(safe-area-inset-bottom)); width: 132px; height: 132px;
+      border-radius: 50%; border: 2px solid rgba(191, 219, 254, .72);
+      background: rgba(15, 23, 42, .62); z-index: 800; touch-action: none;
+      display: none;
+    `;
+    const thumb = document.createElement("div");
+    thumb.style.cssText = `position:absolute;left:50%;top:50%;width:48px;height:48px;transform:translate(-50%,-50%);border-radius:50%;background:rgba(147,197,253,.72);pointer-events:none;`;
+    this.touchJoystick.appendChild(thumb);
+    document.body.appendChild(this.touchJoystick);
+    this.touchInput.attach(this.touchJoystick);
+  }
+
+  private getLocalPlayer(): PlayerData | undefined {
+    return this.mySessionId
+      ? this.room?.state.players.get(this.mySessionId)
+      : undefined;
+  }
+
+  private findNearbyKillTarget(): PlayerData | undefined {
+    const localPlayer = this.getLocalPlayer();
+    if (!localPlayer || !this.room) return undefined;
+
+    let closest: PlayerData | undefined;
+    let closestDistance: number = GAME_CONFIG.KILL_RANGE;
+    this.room.state.players.forEach((player) => {
+      if (
+        player.sessionId === localPlayer.sessionId ||
+        player.state !== PlayerState.Alive
+      )
+        return;
+      const distance = Math.hypot(
+        player.x - localPlayer.x,
+        player.y - localPlayer.y,
+      );
+      if (distance <= closestDistance) {
+        closest = player;
+        closestDistance = distance;
+      }
+    });
+    return closest;
+  }
+
+  private getActionContext() {
+    const localPlayer = this.getLocalPlayer();
+    return {
+      phase: this.room?.state.phase ?? null,
+      role: this.myRole,
+      isAlive: localPlayer?.state === PlayerState.Alive,
+      isVenting: this.isVenting,
+      hasNearbyKillTarget: Boolean(this.findNearbyKillTarget()),
+    };
+  }
+
+  private updateActionControls() {
+    if (!this.touchJoystick) return;
+    const actions = getAvailableActions(this.getActionContext());
+    const shouldShow = actions.canKill || actions.canCallMeeting;
+    this.touchJoystick.style.display = shouldShow ? "block" : "none";
+
+    if (!shouldShow) {
+      this.actionControls?.remove();
+      this.actionControls = null;
+      return;
+    }
+
+    if (!this.actionControls) {
+      this.actionControls = document.createElement("div");
+      this.actionControls.id = "action-controls";
+      this.actionControls.style.cssText = `
+        position:fixed;right:max(20px, env(safe-area-inset-right));
+        bottom:max(20px, env(safe-area-inset-bottom));z-index:800;display:flex;
+        flex-direction:column;align-items:stretch;gap:10px;width:min(150px,35vw);
+      `;
+      document.body.appendChild(this.actionControls);
+    }
+
+    this.actionControls.innerHTML = `
+      ${actions.canKill ? '<button type="button" data-game-action="kill">Kill</button>' : ""}
+      ${actions.canCallMeeting ? '<button type="button" data-game-action="meeting">Meeting</button>' : ""}
+    `;
+    this.actionControls
+      .querySelectorAll<HTMLButtonElement>("button[data-game-action]")
+      .forEach((button) => {
+        button.style.cssText =
+          "min-height:56px;border:2px solid #f8fafc;border-radius:999px;background:#1d4ed8;color:#fff;font-size:16px;font-weight:700;touch-action:manipulation;";
+        button.addEventListener("click", () => {
+          this.handleAction(button.dataset.gameAction as DesktopAction);
+        });
+      });
+  }
+
+  private handleDesktopAction(action: DesktopAction) {
+    this.handleAction(action);
+  }
+
+  private handleAction(action: DesktopAction) {
+    const availableActions = getAvailableActions(this.getActionContext());
+    if (action === "kill" && availableActions.canKill) {
+      const target = this.findNearbyKillTarget();
+      if (target && this.room) {
+        const message: KillMessage = { targetSessionId: target.sessionId };
+        this.room.send(MESSAGE_TYPES.KILL, message);
+      }
+    } else if (
+      action === "meeting" &&
+      availableActions.canCallMeeting &&
+      this.room
     ) {
-      e.preventDefault();
+      const message: CallMeetingMessage = {};
+      this.room.send(MESSAGE_TYPES.CALL_MEETING, message);
     }
-    this.keysPressed.add(e.key.toLowerCase());
-  }
-
-  private handleKeyUp(e: KeyboardEvent) {
-    this.keysPressed.delete(e.key.toLowerCase());
-  }
-
-  private getInputDirection(): Vec2 {
-    let x = 0;
-    let y = 0;
-
-    if (this.keysPressed.has("arrowup") || this.keysPressed.has("w")) {
-      y -= 1;
-    }
-    if (this.keysPressed.has("arrowdown") || this.keysPressed.has("s")) {
-      y += 1;
-    }
-    if (this.keysPressed.has("arrowleft") || this.keysPressed.has("a")) {
-      x -= 1;
-    }
-    if (this.keysPressed.has("arrowright") || this.keysPressed.has("d")) {
-      x += 1;
-    }
-
-    return { x, y };
   }
 
   private async connect() {
@@ -642,6 +796,7 @@ class GameClient {
     this.room.onStateChange((state) => {
       this.renderPlayersList(state.players);
       this.updateVentUI();
+      this.updateActionControls();
     });
 
     this.room.onMessage(MESSAGE_TYPES.WELCOME, (message) => {
@@ -711,56 +866,91 @@ class GameClient {
       // The LOBBY_STATE message will follow with updated ready status
     });
 
-    this.room.onMessage(MESSAGE_TYPES.MATCH_START, (message: MatchStartMessage) => {
-      console.log("Match started:", message);
-      // Match is starting, roles will be assigned
-    });
+    this.room.onMessage(
+      MESSAGE_TYPES.MATCH_START,
+      (message: MatchStartMessage) => {
+        console.log("Match started:", message);
+        // Match is starting, roles will be assigned
+      },
+    );
 
-    this.room.onMessage(MESSAGE_TYPES.ROLE_ASSIGNMENT, (message: RoleAssignmentMessage) => {
-      console.log("Role assigned:", message);
-      this.myRole = message.role;
-      this.showRoleReveal(message.role);
-      this.updateVentUI();
-    });
+    this.room.onMessage(
+      MESSAGE_TYPES.ROLE_ASSIGNMENT,
+      (message: RoleAssignmentMessage) => {
+        console.log("Role assigned:", message);
+        this.myRole = message.role;
+        this.showRoleReveal(message.role);
+        this.updateVentUI();
+        this.updateActionControls();
+      },
+    );
 
-    this.room.onMessage(MESSAGE_TYPES.VENT_STATE, (message: VentStateMessage) => {
-      this.isVenting = message.isVenting;
-      this.currentVentNodeId = message.currentNodeId;
-      this.connectedVentNodeIds = message.connectedNodeIds;
-      this.lastSentInput = { x: 0, y: 0 };
-      this.updateVentUI(message);
-    });
+    this.room.onMessage(
+      MESSAGE_TYPES.VENT_STATE,
+      (message: VentStateMessage) => {
+        this.isVenting = message.isVenting;
+        this.currentVentNodeId = message.currentNodeId;
+        this.connectedVentNodeIds = message.connectedNodeIds;
+        this.lastSentInput = { x: 0, y: 0 };
+        this.updateVentUI(message);
+        this.updateActionControls();
+      },
+    );
 
-    this.room.onMessage(MESSAGE_TYPES.MEETING_STARTED, (message: MeetingStartedMessage) => {
-      this.lastSentInput = { x: 0, y: 0 };
-      this.showDiscussion(message.discussionEndTime);
-    });
-
-    this.room.onMessage(MESSAGE_TYPES.MEETING_STATE, (message: MeetingStateMessage) => {
-      if (message.phase === "discussion" && message.discussionEndTime && !this.phaseUI) {
+    this.room.onMessage(
+      MESSAGE_TYPES.MEETING_STARTED,
+      (message: MeetingStartedMessage) => {
+        this.lastSentInput = { x: 0, y: 0 };
         this.showDiscussion(message.discussionEndTime);
-      }
-    });
+      },
+    );
 
-    this.room.onMessage(MESSAGE_TYPES.VOTING_STARTED, (message: VotingStartedMessage) => {
-      this.showVoting(message.votingDeadline);
-    });
+    this.room.onMessage(
+      MESSAGE_TYPES.MEETING_STATE,
+      (message: MeetingStateMessage) => {
+        if (
+          message.phase === "discussion" &&
+          message.discussionEndTime &&
+          !this.phaseUI
+        ) {
+          this.showDiscussion(message.discussionEndTime);
+        }
+      },
+    );
 
-    this.room.onMessage(MESSAGE_TYPES.VOTE_SUBMITTED, (message: { success: boolean; reason?: string }) => {
-      const feedback = this.phaseUI?.querySelector("#vote-feedback");
-      if (feedback) {
-        feedback.textContent = message.success ? "Vote submitted. You may still change it." : message.reason ?? "Vote rejected.";
-      }
-    });
+    this.room.onMessage(
+      MESSAGE_TYPES.VOTING_STARTED,
+      (message: VotingStartedMessage) => {
+        this.showVoting(message.votingDeadline);
+      },
+    );
 
-    this.room.onMessage(MESSAGE_TYPES.VOTING_RESULTS, (message: VotingResultsMessage) => {
-      this.showVoteResults(message);
-    });
+    this.room.onMessage(
+      MESSAGE_TYPES.VOTE_SUBMITTED,
+      (message: { success: boolean; reason?: string }) => {
+        const feedback = this.phaseUI?.querySelector("#vote-feedback");
+        if (feedback) {
+          feedback.textContent = message.success
+            ? "Vote submitted. You may still change it."
+            : (message.reason ?? "Vote rejected.");
+        }
+      },
+    );
 
-    this.room.onMessage(MESSAGE_TYPES.GAME_OVER, (message: { winner: PlayerRole | null; reason: string }) => {
-      this.showGameOver(message.winner, message.reason);
-      this.stopInputSending();
-    });
+    this.room.onMessage(
+      MESSAGE_TYPES.VOTING_RESULTS,
+      (message: VotingResultsMessage) => {
+        this.showVoteResults(message);
+      },
+    );
+
+    this.room.onMessage(
+      MESSAGE_TYPES.GAME_OVER,
+      (message: { winner: PlayerRole | null; reason: string }) => {
+        this.showGameOver(message.winner, message.reason);
+        this.stopInputSending();
+      },
+    );
 
     this.room.onStateChange((state) => {
       this.renderPlayersList(state.players);
@@ -785,6 +975,8 @@ class GameClient {
       this.hidePhaseUI();
       this.ventUI?.remove();
       this.ventUI = null;
+      this.actionControls?.remove();
+      this.actionControls = null;
       this.myRole = null;
       this.isVenting = false;
       this.currentVentNodeId = null;
@@ -815,7 +1007,7 @@ class GameClient {
   private sendMovementInput() {
     if (!this.room || !this.mySessionId || this.isVenting) return;
 
-    const direction = this.getInputDirection();
+    const direction = this.inputController.getMovement();
 
     // Only send if input changed (optimization)
     if (
@@ -933,10 +1125,15 @@ class GameClient {
     }
 
     // Draw meeting room indicator
-    const meetingRoom = STARFALL_MAP.rooms.find(r => r.id === STARFALL_MAP.meetingRoomId);
+    const meetingRoom = STARFALL_MAP.rooms.find(
+      (r) => r.id === STARFALL_MAP.meetingRoomId,
+    );
     if (meetingRoom) {
-      const x = offsetX + (meetingRoom.bounds.x + meetingRoom.bounds.width / 2) * scale;
-      const y = offsetY + (meetingRoom.bounds.y + meetingRoom.bounds.height / 2) * scale;
+      const x =
+        offsetX + (meetingRoom.bounds.x + meetingRoom.bounds.width / 2) * scale;
+      const y =
+        offsetY +
+        (meetingRoom.bounds.y + meetingRoom.bounds.height / 2) * scale;
       this.ctx.fillStyle = "rgba(59, 130, 246, 0.3)";
       this.ctx.beginPath();
       this.ctx.arc(x, y, Math.max(50, 80 * scale), 0, Math.PI * 2);
@@ -1009,8 +1206,8 @@ class GameClient {
     this.ctx.setLineDash([10 * scale, 5 * scale]);
 
     for (const conn of STARFALL_MAP.ventConnections) {
-      const from = STARFALL_MAP.ventNodes.find(v => v.id === conn.from);
-      const to = STARFALL_MAP.ventNodes.find(v => v.id === conn.to);
+      const from = STARFALL_MAP.ventNodes.find((v) => v.id === conn.from);
+      const to = STARFALL_MAP.ventNodes.find((v) => v.id === conn.to);
       if (from && to) {
         const x1 = offsetX + from.x * scale;
         const y1 = offsetY + from.y * scale;

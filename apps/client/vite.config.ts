@@ -1,5 +1,8 @@
 import { defineConfig } from "vite";
 import path from "path";
+import { fileURLToPath } from "url";
+
+const workspaceRoot = fileURLToPath(new URL("../..", import.meta.url));
 
 export default defineConfig({
   root: ".",
@@ -19,7 +22,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "@starfall/shared": path.resolve(__dirname, "../../packages/shared/src"),
+      "@starfall/shared": path.resolve(workspaceRoot, "packages/shared/src"),
     },
   },
 });

@@ -1005,6 +1005,15 @@ Record the chosen visibility behavior.
 
 # Milestone 9: Mobile Controls and Responsive Cross-Platform UI
 
+### Implementation decisions
+
+- Status: Accepted
+- Date: 2026-09-26
+- Milestone: M9
+- Portrait and landscape browser layouts are supported. The touch joystick is fixed at the bottom-left safe area, while context-sensitive action controls are fixed at the bottom-right safe area.
+- The joystick uses Pointer Events with pointer capture, a 10% dead zone, and reset-on-release or cancellation behavior. Touch and keyboard directions are normalized through the same device-independent `InputController`.
+- Kill targets use the nearest living player within the client-visible kill range as an advisory selection only. The existing authoritative server validation remains decisive. Meeting, kill, voting, and vent controls continue to use their existing network contracts.
+
 ## Goal
 
 Make the complete core match playable on a touch-only mobile device without keyboard or mouse.
@@ -1435,7 +1444,7 @@ M5  Kill system, elimination, and basic victory        COMPLETED
 M6  Emergency meetings and discussion phase            COMPLETED
 M7  Voting, ejection, and complete victory flow        COMPLETE
 M8  Vent network and Killer traversal                  COMPLETE
-M9  Mobile controls and responsive UI                  NOT STARTED
+M9  Mobile controls and responsive UI                  COMPLETE
 M10 Accounts and persistence                           NOT STARTED
 M11 Reconnection and resilience                        NOT STARTED
 M12 Networking polish and gameplay presentation        NOT STARTED

@@ -41,7 +41,7 @@ import { MeetingSystem } from "../systems/MeetingSystem";
 import { VotingSystem } from "../systems/VotingSystem";
 import { VentSystem } from "../systems/VentSystem";
 
-export class GameRoom extends Room<GameRoomState> {
+export class GameRoom extends Room<{ state: GameRoomState }> {
   override maxClients = GAME_CONFIG.MAX_PLAYERS;
 
   // Fixed timestep for authoritative simulation (60 Hz)
@@ -157,11 +157,11 @@ export class GameRoom extends Room<GameRoomState> {
     this.startSimulationLoop();
   }
 
-  override onJoin(client: Client, options: any) {
+  override onJoin(client: Client, options: unknown) {
     console.log(`Client ${client.sessionId} joined`);
   }
 
-  override onLeave(client: Client, consented: boolean) {
+  override onLeave(client: Client, code?: number) {
     console.log(`Client ${client.sessionId} left`);
     this.handleLeave(client);
   }
