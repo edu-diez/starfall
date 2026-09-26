@@ -13,17 +13,20 @@ exports.GameRoomState = exports.Player = void 0;
 const schema_1 = require("@colyseus/schema");
 const shared_1 = require("@starfall/shared");
 class Player extends schema_1.Schema {
-    sessionId = "";
-    /** Safe public identifier only; credentials and account records remain private. */
-    accountId = "";
-    name = "";
-    color = "#FF0000";
-    state = shared_1.PlayerState.Alive;
-    x = 0;
-    y = 0;
-    lastInputTimestamp = 0;
-    ready = false;
-    meetingsUsed = 0;
+    constructor() {
+        super(...arguments);
+        this.sessionId = "";
+        /** Safe public identifier only; credentials and account records remain private. */
+        this.accountId = "";
+        this.name = "";
+        this.color = "#FF0000";
+        this.state = shared_1.PlayerState.Alive;
+        this.x = 0;
+        this.y = 0;
+        this.ready = false;
+        /** False only while the authenticated owner is within a reconnect grace window. */
+        this.isConnected = true;
+    }
 }
 exports.Player = Player;
 __decorate([
@@ -55,31 +58,30 @@ __decorate([
     __metadata("design:type", Number)
 ], Player.prototype, "y", void 0);
 __decorate([
-    (0, schema_1.type)("number"),
-    __metadata("design:type", Number)
-], Player.prototype, "lastInputTimestamp", void 0);
-__decorate([
     (0, schema_1.type)("boolean"),
     __metadata("design:type", Boolean)
 ], Player.prototype, "ready", void 0);
 __decorate([
-    (0, schema_1.type)("number"),
-    __metadata("design:type", Number)
-], Player.prototype, "meetingsUsed", void 0);
+    (0, schema_1.type)("boolean"),
+    __metadata("design:type", Boolean)
+], Player.prototype, "isConnected", void 0);
 class GameRoomState extends schema_1.Schema {
-    players = new schema_1.MapSchema();
-    phase = shared_1.GamePhase.Lobby;
-    matchStartTime = 0;
-    meetingEndTime = 0;
-    voteDeadline = 0;
-    voteResultsEndTime = 0;
-    voteSubmitted = new schema_1.MapSchema();
-    voteTotals = new schema_1.MapSchema();
-    abstainVotes = 0;
-    ejectedPlayerId = null;
-    ejectedPlayerRole = null;
-    winner = null;
-    endReason = null;
+    constructor() {
+        super(...arguments);
+        this.players = new schema_1.MapSchema();
+        this.phase = shared_1.GamePhase.Lobby;
+        this.matchStartTime = 0;
+        this.meetingEndTime = 0;
+        this.voteDeadline = 0;
+        this.voteResultsEndTime = 0;
+        this.voteSubmitted = new schema_1.MapSchema();
+        this.voteTotals = new schema_1.MapSchema();
+        this.abstainVotes = 0;
+        this.ejectedPlayerId = null;
+        this.ejectedPlayerRole = null;
+        this.winner = null;
+        this.endReason = null;
+    }
     createPlayer(sessionId, accountId, name, color) {
         const player = new Player();
         player.sessionId = sessionId;
@@ -90,6 +92,7 @@ class GameRoomState extends schema_1.Schema {
         player.y = 540;
         player.state = shared_1.PlayerState.Alive;
         player.ready = false;
+        player.isConnected = true;
         return player;
     }
 }

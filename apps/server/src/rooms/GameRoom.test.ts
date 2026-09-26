@@ -92,6 +92,14 @@ describe("GameRoom", () => {
     expect(JSON.stringify(publicPlayer)).not.toContain("starfall_account");
   });
 
+  it("patch-encodes a joined player", () => {
+    mockRoom.onCreate({});
+    const client = mockClient("client-1");
+    mockRoom.handleJoin(client, {});
+
+    expect(() => mockRoom._serializer.applyPatches()).not.toThrow();
+  });
+
   it("removes player on leave", () => {
     mockRoom.onCreate({});
     const client = mockClient("client-1");

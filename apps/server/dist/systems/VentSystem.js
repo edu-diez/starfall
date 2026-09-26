@@ -8,12 +8,10 @@ const shared_1 = require("@starfall/shared");
  * would reveal the Killer role to other clients.
  */
 class VentSystem {
-    state;
-    roleAssignmentSystem;
-    ventOccupants = new Map();
     constructor(state, roleAssignmentSystem) {
         this.state = state;
         this.roleAssignmentSystem = roleAssignmentSystem;
+        this.ventOccupants = new Map();
     }
     enter(sessionId, nodeId) {
         const authorization = this.validateKillerInPlayingPhase(sessionId);

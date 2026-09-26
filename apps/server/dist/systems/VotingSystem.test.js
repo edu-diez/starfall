@@ -6,7 +6,6 @@ const VotingSystem_1 = require("./VotingSystem");
 const RoleAssignmentSystem_1 = require("./RoleAssignmentSystem");
 const shared_1 = require("@starfall/shared");
 class TestClock {
-    time;
     constructor(time = 1_000_000) {
         this.time = time;
     }

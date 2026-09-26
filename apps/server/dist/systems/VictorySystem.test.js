@@ -9,9 +9,8 @@ const shared_1 = require("@starfall/shared");
  * Deterministic random source for testing
  */
 class TestRandomSource {
-    values;
-    index = 0;
     constructor(values) {
+        this.index = 0;
         // Use values directly as random outputs (should be in [0, 1) range)
         this.values = values;
     }

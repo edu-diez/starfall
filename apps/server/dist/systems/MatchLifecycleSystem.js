@@ -3,10 +3,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.MatchLifecycleSystem = void 0;
 const shared_1 = require("@starfall/shared");
 class MatchLifecycleSystem {
-    state;
-    lobbySystem;
-    matchId = 0;
     constructor(state, lobbySystem) {
+        this.matchId = 0;
         this.state = state;
         this.lobbySystem = lobbySystem;
     }

@@ -3,7 +3,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ColorSystem = void 0;
 const shared_1 = require("@starfall/shared");
 class ColorSystem {
-    state;
     constructor(state) {
         this.state = state;
     }

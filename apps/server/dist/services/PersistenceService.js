@@ -13,10 +13,9 @@ const EMPTY_STORE = {
  * PersistenceService interface without changing game rules or room logic.
  */
 class JsonFilePersistenceService {
-    filePath;
-    writeQueue = Promise.resolve();
     constructor(filePath) {
         this.filePath = filePath;
+        this.writeQueue = Promise.resolve();
     }
     async getAccount(accountId) {
         const store = await this.readStore();

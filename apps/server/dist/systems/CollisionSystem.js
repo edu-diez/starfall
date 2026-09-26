@@ -8,10 +8,6 @@ const shared_2 = require("@starfall/shared");
  * for player movement against map boundaries and walls
  */
 class CollisionSystem {
-    state;
-    walls;
-    doors;
-    playerRadius;
     constructor(state) {
         this.state = state;
         this.walls = (0, shared_2.getMapWalls)(shared_2.STARFALL_MAP);

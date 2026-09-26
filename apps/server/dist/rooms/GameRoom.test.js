@@ -67,6 +67,12 @@ const mockBroadcast = vitest_1.vi.fn();
         (0, vitest_1.expect)(Object.keys(publicPlayer)).not.toContain("credential");
         (0, vitest_1.expect)(JSON.stringify(publicPlayer)).not.toContain("starfall_account");
     });
+    (0, vitest_1.it)("patch-encodes a joined player", () => {
+        mockRoom.onCreate({});
+        const client = mockClient("client-1");
+        mockRoom.handleJoin(client, {});
+        (0, vitest_1.expect)(() => mockRoom._serializer.applyPatches()).not.toThrow();
+    });
     (0, vitest_1.it)("removes player on leave", () => {
         mockRoom.onCreate({});
         const client = mockClient("client-1");
@@ -74,6 +80,71 @@ const mockBroadcast = vitest_1.vi.fn();
         (0, vitest_1.expect)(mockRoom.state.players.size).toBe(1);
         mockRoom.handleLeave(client);
         (0, vitest_1.expect)(mockRoom.state.players.size).toBe(0);
+    });
+    (0, vitest_1.describe)("Reconnection", () => {
+        (0, vitest_1.it)("neutralizes input and retains the existing player during the grace window", () => {
+            mockRoom.onCreate({});
+            const client = mockClient("client-1");
+            mockRoom.handleJoin(client, {});
+            mockRoom.state.phase = shared_1.GamePhase.Playing;
+            mockRoom.handleMove(client, {
+                direction: { x: 1, y: 0 },
+                timestamp: Date.now(),
+            });
+            mockRoom.roleAssignmentSystem["roleMap"].set("client-1", shared_1.PlayerRole.Killer);
+            mockRoom.allowReconnection = vitest_1.vi.fn(() => new Promise(() => { }));
+            mockRoom.onDrop(client);
+            (0, vitest_1.expect)(mockRoom.playerInputs.has("client-1")).toBe(false);
+            (0, vitest_1.expect)(mockRoom.state.players.get("client-1")).toMatchObject({
+                isConnected: false,
+            });
+            (0, vitest_1.expect)(mockRoom.roleAssignmentSystem.getRole("client-1")).toBe(shared_1.PlayerRole.Killer);
+        });
+        (0, vitest_1.it)("restores the same player and sends private recovery only to the reconnecting client", () => {
+            mockRoom.onCreate({});
+            const client = mockClient("client-1");
+            mockRoom.handleJoin(client, {});
+            mockRoom.roleAssignmentSystem["roleMap"].set("client-1", shared_1.PlayerRole.Killer);
+            mockRoom.killSystem["killCooldownUntil"].set("client-1", Date.now() + 10_000);
+            mockRoom.state.players.get("client-1").isConnected = false;
+            mockRoom.reconnectingSessionIds.add("client-1");
+            const reconnectedClient = mockClient("client-1");
+            mockRoom.onReconnect(reconnectedClient);
+            (0, vitest_1.expect)(mockRoom.state.players.size).toBe(1);
+            (0, vitest_1.expect)(mockRoom.state.players.get("client-1")?.isConnected).toBe(true);
+            (0, vitest_1.expect)(reconnectedClient.send).toHaveBeenCalledWith(shared_1.MESSAGE_TYPES.RECONNECTION_STATE, vitest_1.expect.objectContaining({
+                role: shared_1.PlayerRole.Killer,
+                killCooldownRemaining: vitest_1.expect.any(Number),
+            }));
+            (0, vitest_1.expect)(mockBroadcast).not.toHaveBeenCalledWith(shared_1.MESSAGE_TYPES.RECONNECTION_STATE, vitest_1.expect.anything());
+        });
+        (0, vitest_1.it)("removes public and private state only after permanent departure", () => {
+            mockRoom.onCreate({});
+            const client = mockClient("client-1");
+            mockRoom.handleJoin(client, {});
+            mockRoom.roleAssignmentSystem["roleMap"].set("client-1", shared_1.PlayerRole.Killer);
+            mockRoom.killSystem["killCooldownUntil"].set("client-1", Date.now());
+            mockRoom.meetingSystem["meetingsUsed"].set("client-1", 1);
+            mockRoom.votingSystem["eligibleVoters"].add("client-1");
+            mockRoom.handlePermanentLeave("client-1");
+            (0, vitest_1.expect)(mockRoom.state.players.has("client-1")).toBe(false);
+            (0, vitest_1.expect)(mockRoom.roleAssignmentSystem.getRole("client-1")).toBeUndefined();
+            (0, vitest_1.expect)(mockRoom.killSystem.getCooldownRemaining("client-1")).toBe(0);
+            (0, vitest_1.expect)(mockRoom.meetingSystem.getMeetingsRemaining("client-1")).toBe(1);
+            (0, vitest_1.expect)(mockRoom.votingSystem.getEligibleVoterIds()).not.toContain("client-1");
+        });
+        (0, vitest_1.it)("rejects a second session for an account already represented in the room", () => {
+            mockRoom.onCreate({});
+            const originalClient = mockClient("client-1");
+            const duplicateClient = mockClient("client-2");
+            duplicateClient.auth.id = originalClient.auth.id;
+            mockRoom.handleJoin(originalClient, {});
+            mockRoom.handleJoin(duplicateClient, {});
+            (0, vitest_1.expect)(mockRoom.state.players.size).toBe(1);
+            (0, vitest_1.expect)(duplicateClient.send).toHaveBeenCalledWith(shared_1.MESSAGE_TYPES.ERROR, {
+                message: "Account already has a player in this room",
+            });
+        });
     });
     (0, vitest_1.it)("rejects join when room is full", () => {
         mockRoom.onCreate({});
@@ -108,6 +179,12 @@ const mockBroadcast = vitest_1.vi.fn();
             (0, vitest_1.expect)(storedInput).toBeDefined();
             (0, vitest_1.expect)(storedInput?.direction.x).toBe(1);
             (0, vitest_1.expect)(storedInput?.direction.y).toBe(0);
+        });
+        (0, vitest_1.it)("rejects malformed movement payloads without throwing or mutating input", () => {
+            const client = mockClient("client-1");
+            (0, vitest_1.expect)(() => mockRoom.handleMove(client, null)).not.toThrow();
+            (0, vitest_1.expect)(() => mockRoom.handleMove(client, { direction: null })).not.toThrow();
+            (0, vitest_1.expect)(mockRoom.playerInputs.has("client-1")).toBe(false);
         });
         (0, vitest_1.it)("rejects non-finite input", () => {
             const client = mockClient("client-1");
@@ -242,8 +319,8 @@ const mockBroadcast = vitest_1.vi.fn();
             // Simulate a tick with deltaTime = 1 second
             mockRoom.lastTickTime = Date.now() - 1000;
             mockRoom.tick();
-            // Player should move exactly PLAYER_SPEED pixels in 1 second
-            const expectedX = 850 + shared_1.GAME_CONFIG.PLAYER_SPEED;
+            // A stalled event loop is clamped to protect simulation fairness.
+            const expectedX = 850 + shared_1.GAME_CONFIG.PLAYER_SPEED * 0.1;
             (0, vitest_1.expect)(player?.x).toBeCloseTo(expectedX, 0);
         });
         (0, vitest_1.it)("does not simulate movement in Lobby phase", () => {
@@ -389,6 +466,30 @@ const mockBroadcast = vitest_1.vi.fn();
             (0, vitest_1.expect)(color3).toBe(color1); // Should get the released color
         });
     });
+    (0, vitest_1.describe)("Command hardening", () => {
+        (0, vitest_1.beforeEach)(() => {
+            mockRoom.onCreate({});
+            mockRoom.handleJoin(mockClient("client-1"), {});
+        });
+        (0, vitest_1.it)("rejects malformed discrete command payloads without mutating state", () => {
+            const client = mockClient("client-1");
+            const originalColor = mockRoom.state.players.get("client-1").color;
+            (0, vitest_1.expect)(() => mockRoom.handleColorChange(client, null)).not.toThrow();
+            (0, vitest_1.expect)(() => mockRoom.handleReady(client, { ready: "yes" })).not.toThrow();
+            (0, vitest_1.expect)(() => mockRoom.handleKill(client, { targetSessionId: null })).not.toThrow();
+            (0, vitest_1.expect)(() => mockRoom.handleVote(client, null)).not.toThrow();
+            (0, vitest_1.expect)(mockRoom.state.players.get("client-1").color).toBe(originalColor);
+            (0, vitest_1.expect)(mockRoom.state.players.get("client-1").ready).toBe(false);
+        });
+        (0, vitest_1.it)("clears private kill cooldowns before a fresh match", () => {
+            const clients = ["client-1", "client-2", "client-3", "client-4"].map(mockClient);
+            clients.slice(1).forEach((client) => mockRoom.handleJoin(client, {}));
+            clients.forEach((client) => mockRoom.handleReady(client, { ready: true }));
+            mockRoom.killSystem["killCooldownUntil"].set("client-1", Date.now() + 30_000);
+            mockRoom.handleMatchStart(clients[0], {});
+            (0, vitest_1.expect)(mockRoom.killSystem.getCooldownRemaining("client-1")).toBe(0);
+        });
+    });
     (0, vitest_1.describe)("Color System", () => {
         (0, vitest_1.beforeEach)(() => {
             mockRoom.onCreate({});
@@ -513,6 +614,8 @@ const mockBroadcast = vitest_1.vi.fn();
         (0, vitest_1.expect)(player.x).toBe(960);
         (0, vitest_1.expect)(player.y).toBe(540);
         (0, vitest_1.expect)(player.state).toBe(shared_1.PlayerState.Alive);
+        (0, vitest_1.expect)(Object.keys(player)).not.toContain("meetingsUsed");
+        (0, vitest_1.expect)(Object.keys(player)).not.toContain("lastInputTimestamp");
         // Role is no longer in public state (private role assignment)
     });
 });

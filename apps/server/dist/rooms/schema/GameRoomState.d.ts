@@ -9,9 +9,9 @@ export declare class Player extends Schema {
     state: PlayerState;
     x: number;
     y: number;
-    lastInputTimestamp: number;
     ready: boolean;
-    meetingsUsed: number;
+    /** False only while the authenticated owner is within a reconnect grace window. */
+    isConnected: boolean;
 }
 export declare class GameRoomState extends Schema {
     players: MapSchema<Player, string>;

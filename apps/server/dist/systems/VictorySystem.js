@@ -7,12 +7,10 @@ const shared_1 = require("@starfall/shared");
  * It is the ONLY system that determines match winners
  */
 class VictorySystem {
-    state;
-    roleAssignmentSystem;
-    // Winner and end reason (set when match ends)
-    winner = null;
-    endReason = null;
     constructor(state, roleAssignmentSystem) {
+        // Winner and end reason (set when match ends)
+        this.winner = null;
+        this.endReason = null;
         this.state = state;
         this.roleAssignmentSystem = roleAssignmentSystem;
     }
@@ -21,14 +19,25 @@ class VictorySystem {
      * Returns true if the match has ended, false otherwise
      */
     evaluate() {
-        // Vote ejections are evaluated during result resolution; kills during play.
-        if (this.state.phase !== shared_1.GamePhase.Playing &&
-            this.state.phase !== shared_1.GamePhase.ResolvingVote) {
+        return this.evaluateForPhase(false);
+    }
+    /** Evaluate a permanent departure without bypassing VictorySystem ownership. */
+    evaluateAfterDeparture() {
+        return this.evaluateForPhase(true);
+    }
+    evaluateForPhase(allowActiveMatchPhase) {
+        const isNormalEvaluationPhase = this.state.phase === shared_1.GamePhase.Playing ||
+            this.state.phase === shared_1.GamePhase.ResolvingVote;
+        const isDepartureEvaluationPhase = this.state.phase === shared_1.GamePhase.Meeting ||
+            this.state.phase === shared_1.GamePhase.Voting;
+        if (!isNormalEvaluationPhase &&
+            !(allowActiveMatchPhase && isDepartureEvaluationPhase)) {
             return false;
         }
         const livingCounts = this.getLivingRoleCounts();
         // Killer victory: Living Killers >= Living Crewmates
-        if (livingCounts.killers >= livingCounts.crewmates && livingCounts.killers > 0) {
+        if (livingCounts.killers >= livingCounts.crewmates &&
+            livingCounts.killers > 0) {
             this.setWinner(shared_1.PlayerRole.Killer, "Killer reached parity with Crewmates");
             return true;
         }

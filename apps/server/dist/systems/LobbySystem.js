@@ -4,8 +4,6 @@ exports.LobbySystem = void 0;
 const shared_1 = require("@starfall/shared");
 const ColorSystem_1 = require("./ColorSystem");
 class LobbySystem {
-    state;
-    colorSystem;
     constructor(state) {
         this.state = state;
         this.colorSystem = new ColorSystem_1.ColorSystem(state);

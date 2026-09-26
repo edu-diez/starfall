@@ -13,11 +13,17 @@ const AccountService_1 = require("./services/AccountService");
 const PersistenceService_1 = require("./services/PersistenceService");
 const dotenv_1 = __importDefault(require("dotenv"));
 dotenv_1.default.config();
-const PORT = Number(process.env.PORT) || 2567;
+const configuredPort = Number(process.env.PORT ?? 2567);
+if (!Number.isInteger(configuredPort) || configuredPort < 1 || configuredPort > 65535) {
+    throw new Error("PORT must be an integer between 1 and 65535");
+}
+const PORT = configuredPort;
+const isProduction = process.env.NODE_ENV === "production";
 const accountService = new AccountService_1.LocalAccountService(new PersistenceService_1.JsonFilePersistenceService(process.env.ACCOUNT_STORE_PATH || ".starfall/accounts.json"));
 GameRoom_1.GameRoom.configureAccountService(accountService);
 const app = (0, express_1.default)();
-app.use(express_1.default.json());
+app.disable("x-powered-by");
+app.use(express_1.default.json({ limit: "4kb" }));
 app.get("/api/account", async (request, response, next) => {
     try {
         const result = await accountService.resolveAccount(readCookie(request.headers.cookie, "starfall_account"));
@@ -25,7 +31,7 @@ app.get("/api/account", async (request, response, next) => {
             response.cookie("starfall_account", result.credential, {
                 httpOnly: true,
                 sameSite: "lax",
-                secure: process.env.NODE_ENV === "production",
+                secure: isProduction,
                 path: "/",
             });
         }
@@ -64,7 +70,13 @@ const gameServer = new colyseus_1.Server({
     }),
 });
 gameServer.define("game", GameRoom_1.GameRoom);
-app.use("/colyseus", (0, monitor_1.monitor)());
+if (!isProduction || process.env.ENABLE_COLYSEUS_MONITOR === "true") {
+    app.use("/colyseus", (0, monitor_1.monitor)());
+}
+app.use((error, _request, response, _next) => {
+    console.error("Request failed", error instanceof Error ? error.message : "unknown error");
+    response.status(500).json({ message: "Internal server error" });
+});
 gameServer.listen(PORT);
 console.log(`Server listening on ws://localhost:${PORT}`);
 function readCookie(cookieHeader, name) {

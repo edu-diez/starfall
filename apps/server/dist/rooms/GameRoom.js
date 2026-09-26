@@ -15,30 +15,41 @@ const VotingSystem_1 = require("../systems/VotingSystem");
 const VentSystem_1 = require("../systems/VentSystem");
 const AccountService_1 = require("../services/AccountService");
 const PersistenceService_1 = require("../services/PersistenceService");
+const MessageSecurity_1 = require("../security/MessageSecurity");
+const MESSAGE_RATE_LIMITS = {
+    [shared_1.MESSAGE_TYPES.MOVE]: { maxEvents: 75, windowMs: 1000 },
+    [shared_1.MESSAGE_TYPES.JOIN]: { maxEvents: 2, windowMs: 10_000 },
+    [shared_1.MESSAGE_TYPES.LEAVE]: { maxEvents: 2, windowMs: 10_000 },
+    [shared_1.MESSAGE_TYPES.COLOR_CHANGE]: { maxEvents: 10, windowMs: 1000 },
+    [shared_1.MESSAGE_TYPES.READY]: { maxEvents: 10, windowMs: 1000 },
+    [shared_1.MESSAGE_TYPES.MATCH_START]: { maxEvents: 2, windowMs: 1000 },
+    [shared_1.MESSAGE_TYPES.KILL]: { maxEvents: 5, windowMs: 1000 },
+    [shared_1.MESSAGE_TYPES.CALL_MEETING]: { maxEvents: 3, windowMs: 1000 },
+    [shared_1.MESSAGE_TYPES.VOTE]: { maxEvents: 10, windowMs: 1000 },
+    [shared_1.MESSAGE_TYPES.VENT_ENTER]: { maxEvents: 5, windowMs: 1000 },
+    [shared_1.MESSAGE_TYPES.VENT_TRAVEL]: { maxEvents: 10, windowMs: 1000 },
+    [shared_1.MESSAGE_TYPES.VENT_EXIT]: { maxEvents: 5, windowMs: 1000 },
+};
+const MAX_SIMULATION_DELTA_SECONDS = 0.1;
 class GameRoom extends colyseus_1.Room {
-    static accountService = new AccountService_1.LocalAccountService(new PersistenceService_1.JsonFilePersistenceService(".starfall/accounts.json"));
+    constructor() {
+        super(...arguments);
+        this.maxClients = shared_1.GAME_CONFIG.MAX_PLAYERS;
+        // Fixed timestep for authoritative simulation (60 Hz)
+        this.TICK_RATE = 60;
+        this.TICK_INTERVAL = 1000 / this.TICK_RATE;
+        this.simulationInterval = null;
+        this.lastTickTime = 0;
+        // Store latest validated input per player
+        this.playerInputs = new Map();
+        this.messageRateLimiter = new MessageSecurity_1.MessageRateLimiter();
+        /** Session IDs currently held by Colyseus for reconnecting clients. */
+        this.reconnectingSessionIds = new Set();
+    }
+    static { this.accountService = new AccountService_1.LocalAccountService(new PersistenceService_1.JsonFilePersistenceService(".starfall/accounts.json")); }
     static configureAccountService(accountService) {
         GameRoom.accountService = accountService;
     }
-    maxClients = shared_1.GAME_CONFIG.MAX_PLAYERS;
-    // Fixed timestep for authoritative simulation (60 Hz)
-    TICK_RATE = 60;
-    TICK_INTERVAL = 1000 / this.TICK_RATE;
-    simulationInterval = null;
-    lastTickTime = 0;
-    // Store latest validated input per player
-    playerInputs = new Map();
-    // Systems
-    lobbySystem;
-    colorSystem;
-    matchLifecycleSystem;
-    roleAssignmentSystem;
-    collisionSystem;
-    killSystem;
-    victorySystem;
-    meetingSystem;
-    votingSystem;
-    ventSystem;
     onCreate(options) {
         this.setState(new GameRoomState_1.GameRoomState());
         this.state.phase = shared_1.GamePhase.Lobby;
@@ -68,8 +79,8 @@ class GameRoom extends colyseus_1.Room {
         this.onMessage(shared_1.MESSAGE_TYPES.READY, (client, message) => {
             this.handleReady(client, message);
         });
-        this.onMessage(shared_1.MESSAGE_TYPES.MATCH_START, (client) => {
-            this.handleMatchStart(client);
+        this.onMessage(shared_1.MESSAGE_TYPES.MATCH_START, (client, message) => {
+            this.handleMatchStart(client, message);
         });
         this.onMessage(shared_1.MESSAGE_TYPES.KILL, (client, message) => {
             this.handleKill(client, message);
@@ -86,8 +97,8 @@ class GameRoom extends colyseus_1.Room {
         this.onMessage(shared_1.MESSAGE_TYPES.VENT_TRAVEL, (client, message) => {
             this.handleVentTravel(client, message);
         });
-        this.onMessage(shared_1.MESSAGE_TYPES.VENT_EXIT, (client) => {
-            this.handleVentExit(client);
+        this.onMessage(shared_1.MESSAGE_TYPES.VENT_EXIT, (client, message) => {
+            this.handleVentExit(client, message);
         });
         // Start the fixed-rate simulation loop
         this.startSimulationLoop();
@@ -99,9 +110,40 @@ class GameRoom extends colyseus_1.Room {
     onJoin(client, _options) {
         console.log(`Client ${client.sessionId} joined`);
     }
-    onLeave(client, code) {
-        console.log(`Client ${client.sessionId} left`);
-        this.handleLeave(client);
+    onDrop(client, _code) {
+        const player = this.state.players.get(client.sessionId);
+        if (!player)
+            return;
+        // A dropped connection is neutral immediately but retains its authoritative
+        // entity and private state until the reconnect window expires.
+        player.isConnected = false;
+        this.playerInputs.delete(client.sessionId);
+        this.ventSystem.clearPlayer(client.sessionId);
+        this.reconnectingSessionIds.add(client.sessionId);
+        this.broadcast(shared_1.MESSAGE_TYPES.PLAYER_LEFT, { sessionId: client.sessionId });
+        this.allowReconnection(client, shared_1.GAME_CONFIG.RECONNECTION_WINDOW_SECONDS).catch(() => {
+            this.handlePermanentLeave(client.sessionId);
+        });
+    }
+    onReconnect(client) {
+        const player = this.state.players.get(client.sessionId);
+        if (!player) {
+            client.send(shared_1.MESSAGE_TYPES.ERROR, {
+                message: "Reconnect session expired",
+            });
+            return;
+        }
+        player.isConnected = true;
+        this.playerInputs.delete(client.sessionId);
+        this.reconnectingSessionIds.delete(client.sessionId);
+        this.sendPrivateRecoveryState(client);
+    }
+    onLeave(client, _code) {
+        // A dropped client that is still inside the Colyseus reconnection window is
+        // finalized by allowReconnection()'s rejection callback instead.
+        if (!this.reconnectingSessionIds.has(client.sessionId)) {
+            this.handlePermanentLeave(client.sessionId);
+        }
     }
     onDispose() {
         console.log("Room disposed");
@@ -121,7 +163,7 @@ class GameRoom extends colyseus_1.Room {
     }
     tick() {
         const now = Date.now();
-        const deltaTime = (now - this.lastTickTime) / 1000; // Convert to seconds
+        const deltaTime = Math.min(Math.max(0, (now - this.lastTickTime) / 1000), MAX_SIMULATION_DELTA_SECONDS);
         this.lastTickTime = now;
         // Update meeting system (checks for discussion timeout)
         const meetingEnded = this.meetingSystem.update();
@@ -141,7 +183,8 @@ class GameRoom extends colyseus_1.Room {
         }
         // Apply movement for each player based on their latest validated input
         this.state.players.forEach((player, sessionId) => {
-            if (player.state !== shared_1.PlayerState.Alive ||
+            if (!player.isConnected ||
+                player.state !== shared_1.PlayerState.Alive ||
                 this.ventSystem.isVenting(sessionId))
                 return;
             const input = this.playerInputs.get(sessionId);
@@ -179,6 +222,8 @@ class GameRoom extends colyseus_1.Room {
         }
     }
     handleJoin(client, _message) {
+        if (!this.acceptsMessage(client, shared_1.MESSAGE_TYPES.JOIN, _message))
+            return;
         const account = client.auth;
         if (!account) {
             client.send(shared_1.MESSAGE_TYPES.ERROR, {
@@ -186,8 +231,14 @@ class GameRoom extends colyseus_1.Room {
             });
             return;
         }
-        // Check if player already exists
-        if (this.state.players.has(client.sessionId)) {
+        // A reconnect uses Colyseus' original session ID and never sends JOIN.
+        // Reject a separately-created session for an account already represented in
+        // the room so it cannot create a duplicate controllable player.
+        if (this.state.players.has(client.sessionId) ||
+            [...this.state.players.values()].some((player) => player.accountId === account.id)) {
+            client.send(shared_1.MESSAGE_TYPES.ERROR, {
+                message: "Account already has a player in this room",
+            });
             return;
         }
         // Check if can join (lobby phase and not full)
@@ -225,25 +276,46 @@ class GameRoom extends colyseus_1.Room {
         this.broadcast(shared_1.MESSAGE_TYPES.LOBBY_STATE, this.lobbySystem.getLobbyState());
     }
     handleLeave(client) {
-        const player = this.state.players.get(client.sessionId);
-        if (player) {
-            this.lobbySystem.handlePlayerLeave(client.sessionId);
-            this.playerInputs.delete(client.sessionId);
-            this.ventSystem.clearPlayer(client.sessionId);
-            this.votingSystem.removePlayer(client.sessionId);
-            this.broadcast(shared_1.MESSAGE_TYPES.PLAYER_LEFT, {
-                sessionId: client.sessionId,
-            });
-            // Broadcast updated lobby state to all
-            if (this.lobbySystem.isInLobby()) {
-                this.broadcast(shared_1.MESSAGE_TYPES.LOBBY_STATE, this.lobbySystem.getLobbyState());
-            }
+        this.handlePermanentLeave(client.sessionId);
+    }
+    /** Permanently remove a session only after consented leave or grace expiry. */
+    handlePermanentLeave(sessionId) {
+        const player = this.state.players.get(sessionId);
+        if (!player)
+            return;
+        this.reconnectingSessionIds.delete(sessionId);
+        this.playerInputs.delete(sessionId);
+        this.messageRateLimiter.clearPlayer(sessionId);
+        this.ventSystem.clearPlayer(sessionId);
+        this.votingSystem.removePlayer(sessionId);
+        this.meetingSystem.clearPlayer(sessionId);
+        this.killSystem.clearCooldown(sessionId);
+        this.roleAssignmentSystem.clearPlayer(sessionId);
+        this.lobbySystem.handlePlayerLeave(sessionId);
+        this.broadcast(shared_1.MESSAGE_TYPES.PLAYER_LEFT, { sessionId });
+        if (this.lobbySystem.isInLobby()) {
+            this.broadcast(shared_1.MESSAGE_TYPES.LOBBY_STATE, this.lobbySystem.getLobbyState());
+            return;
+        }
+        // VictorySystem remains the sole owner of winner calculation, including a
+        // permanent departure during an active meeting or vote.
+        this.victorySystem.evaluateAfterDeparture();
+        if (this.victorySystem.isMatchEnded()) {
+            this.handleGameOver();
         }
     }
     handleMove(client, message) {
+        if (!this.acceptsMessage(client, shared_1.MESSAGE_TYPES.MOVE, message) ||
+            !(0, MessageSecurity_1.isRecord)(message) ||
+            !(0, MessageSecurity_1.isRecord)(message.direction) ||
+            typeof message.direction.x !== "number" ||
+            typeof message.direction.y !== "number" ||
+            typeof message.timestamp !== "number") {
+            return;
+        }
         // Validate the player exists and is alive
         const player = this.state.players.get(client.sessionId);
-        if (!player || player.state !== shared_1.PlayerState.Alive) {
+        if (!player || !player.isConnected || player.state !== shared_1.PlayerState.Alive) {
             return;
         }
         // Movement is only allowed during normal gameplay.
@@ -274,6 +346,12 @@ class GameRoom extends colyseus_1.Room {
         this.playerInputs.set(client.sessionId, { direction, timestamp });
     }
     handleColorChange(client, message) {
+        if (!this.acceptsMessage(client, shared_1.MESSAGE_TYPES.COLOR_CHANGE, message) ||
+            !(0, MessageSecurity_1.isRecord)(message) ||
+            typeof message.color !== "string") {
+            client.send(shared_1.MESSAGE_TYPES.ERROR, { message: "Invalid color request" });
+            return;
+        }
         // Only allow color changes in lobby phase
         if (!this.lobbySystem.isInLobby()) {
             client.send(shared_1.MESSAGE_TYPES.ERROR, {
@@ -310,6 +388,12 @@ class GameRoom extends colyseus_1.Room {
         }
     }
     handleReady(client, message) {
+        if (!this.acceptsMessage(client, shared_1.MESSAGE_TYPES.READY, message) ||
+            !(0, MessageSecurity_1.isRecord)(message) ||
+            typeof message.ready !== "boolean") {
+            client.send(shared_1.MESSAGE_TYPES.ERROR, { message: "Invalid ready request" });
+            return;
+        }
         // Only allow ready changes in lobby phase
         if (!this.lobbySystem.isInLobby()) {
             client.send(shared_1.MESSAGE_TYPES.ERROR, {
@@ -329,7 +413,13 @@ class GameRoom extends colyseus_1.Room {
             this.broadcast(shared_1.MESSAGE_TYPES.LOBBY_STATE, this.lobbySystem.getLobbyState());
         }
     }
-    handleMatchStart(client) {
+    handleMatchStart(client, message) {
+        if (!this.acceptsMessage(client, shared_1.MESSAGE_TYPES.MATCH_START, message) ||
+            !(0, MessageSecurity_1.isRecord)(message) ||
+            Object.keys(message).length > 0) {
+            client.send(shared_1.MESSAGE_TYPES.ERROR, { message: "Invalid match start request" });
+            return;
+        }
         // Only the host (first player) can start the match, or any player if we allow it
         // For MVP, allow any player to start if conditions are met
         if (!this.matchLifecycleSystem.canStartMatch()) {
@@ -350,6 +440,7 @@ class GameRoom extends colyseus_1.Room {
         this.meetingSystem.reset();
         this.votingSystem.reset();
         this.victorySystem.reset();
+        this.killSystem.clearAllCooldowns();
         this.ventSystem.clearAll();
         this.clearAllPlayerInputs();
         // Assign roles privately
@@ -385,6 +476,15 @@ class GameRoom extends colyseus_1.Room {
         this.broadcast(shared_1.MESSAGE_TYPES.LOBBY_STATE, this.lobbySystem.getLobbyState());
     }
     handleKill(client, message) {
+        if (!this.acceptsMessage(client, shared_1.MESSAGE_TYPES.KILL, message) ||
+            !(0, MessageSecurity_1.isRecord)(message) ||
+            !(0, MessageSecurity_1.isBoundedIdentifier)(message.targetSessionId)) {
+            client.send(shared_1.MESSAGE_TYPES.KILL_RESULT, {
+                success: false,
+                reason: "Invalid kill request",
+            });
+            return;
+        }
         const killerSessionId = client.sessionId;
         // Validate the killer exists and is alive
         const killer = this.state.players.get(killerSessionId);
@@ -431,6 +531,8 @@ class GameRoom extends colyseus_1.Room {
         this.broadcast(shared_1.MESSAGE_TYPES.GAME_OVER, gameOverMessage);
     }
     handleCallMeeting(client, message) {
+        if (!this.acceptsMessage(client, shared_1.MESSAGE_TYPES.CALL_MEETING, message))
+            return;
         const callerSessionId = client.sessionId;
         // Validate the caller exists and is alive
         const caller = this.state.players.get(callerSessionId);
@@ -492,7 +594,9 @@ class GameRoom extends colyseus_1.Room {
         this.broadcastMeetingState();
     }
     handleVentEnter(client, message) {
-        if (!message || typeof message.nodeId !== "string") {
+        if (!this.acceptsMessage(client, shared_1.MESSAGE_TYPES.VENT_ENTER, message) ||
+            !(0, MessageSecurity_1.isRecord)(message) ||
+            !(0, MessageSecurity_1.isBoundedIdentifier)(message.nodeId)) {
             this.sendVentState(client, {
                 success: false,
                 reason: "Vent node must be a string",
@@ -505,7 +609,9 @@ class GameRoom extends colyseus_1.Room {
         this.sendVentState(client, result);
     }
     handleVentTravel(client, message) {
-        if (!message || typeof message.destinationNodeId !== "string") {
+        if (!this.acceptsMessage(client, shared_1.MESSAGE_TYPES.VENT_TRAVEL, message) ||
+            !(0, MessageSecurity_1.isRecord)(message) ||
+            !(0, MessageSecurity_1.isBoundedIdentifier)(message.destinationNodeId)) {
             this.sendVentState(client, {
                 success: false,
                 reason: "Vent destination must be a string",
@@ -514,7 +620,13 @@ class GameRoom extends colyseus_1.Room {
         }
         this.sendVentState(client, this.ventSystem.travel(client.sessionId, message.destinationNodeId));
     }
-    handleVentExit(client) {
+    handleVentExit(client, message) {
+        if (!this.acceptsMessage(client, shared_1.MESSAGE_TYPES.VENT_EXIT, message) ||
+            !(0, MessageSecurity_1.isRecord)(message) ||
+            Object.keys(message).length > 0) {
+            this.sendVentState(client, { success: false, reason: "Invalid vent exit request" });
+            return;
+        }
         const result = this.ventSystem.exit(client.sessionId);
         this.playerInputs.delete(client.sessionId);
         this.sendVentState(client, result);
@@ -530,8 +642,17 @@ class GameRoom extends colyseus_1.Room {
         client.send(shared_1.MESSAGE_TYPES.VENT_STATE, message);
     }
     handleVote(client, message) {
-        const targetSessionId = message?.targetSessionId;
-        if (targetSessionId !== null && typeof targetSessionId !== "string") {
+        if (!this.acceptsMessage(client, shared_1.MESSAGE_TYPES.VOTE, message) ||
+            !(0, MessageSecurity_1.isRecord)(message)) {
+            client.send(shared_1.MESSAGE_TYPES.VOTE_SUBMITTED, {
+                success: false,
+                reason: "Invalid vote request",
+            });
+            return;
+        }
+        const targetSessionId = message.targetSessionId;
+        if (targetSessionId !== null &&
+            !(0, MessageSecurity_1.isBoundedIdentifier)(targetSessionId)) {
             client.send(shared_1.MESSAGE_TYPES.VOTE_SUBMITTED, {
                 success: false,
                 reason: "Vote target must be a player or abstention",
@@ -578,6 +699,36 @@ class GameRoom extends colyseus_1.Room {
                 targetClient.send(shared_1.MESSAGE_TYPES.MEETING_STATE, meetingState);
             }
         });
+    }
+    /** Validate basic message size and server-private rate limits before routing. */
+    acceptsMessage(client, messageType, message) {
+        if (!(0, MessageSecurity_1.isBoundedMessage)(message)) {
+            client.send(shared_1.MESSAGE_TYPES.ERROR, { message: "Message is too large or invalid" });
+            return false;
+        }
+        const limit = MESSAGE_RATE_LIMITS[messageType];
+        if (!limit || this.messageRateLimiter.allows(client.sessionId, messageType, limit)) {
+            return true;
+        }
+        client.send(shared_1.MESSAGE_TYPES.ERROR, { message: "Message rate limit exceeded" });
+        return false;
+    }
+    /** Restore only information that the reconnecting player is entitled to see. */
+    sendPrivateRecoveryState(client) {
+        const role = this.roleAssignmentSystem.getRole(client.sessionId) ?? null;
+        const recovery = {
+            role,
+            killCooldownRemaining: this.killSystem.getCooldownRemaining(client.sessionId),
+            phase: this.state.phase,
+        };
+        client.send(shared_1.MESSAGE_TYPES.RECONNECTION_STATE, recovery);
+        if (role) {
+            client.send(shared_1.MESSAGE_TYPES.ROLE_ASSIGNMENT, {
+                role,
+            });
+        }
+        client.send(shared_1.MESSAGE_TYPES.MEETING_STATE, this.meetingSystem.getMeetingState(client.sessionId));
+        this.sendVentState(client, { success: true });
     }
 }
 exports.GameRoom = GameRoom;

@@ -69,6 +69,8 @@ export declare class MeetingSystem {
      * Reset meeting state for a new match
      */
     reset(): void;
+    /** Remove private per-player state after permanent departure. */
+    clearPlayer(sessionId: string): void;
     /**
      * Set a custom clock (for testing)
      */

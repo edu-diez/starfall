@@ -8,15 +8,12 @@ const MeetingSystem_1 = require("./MeetingSystem");
  * system until votes are resolved.
  */
 class VotingSystem {
-    state;
-    roles;
-    votes = new Map();
-    eligibleVoters = new Set();
-    clock;
-    votingDeadline = 0;
     constructor(state, roles, clock = new MeetingSystem_1.DefaultClock()) {
         this.state = state;
         this.roles = roles;
+        this.votes = new Map();
+        this.eligibleVoters = new Set();
+        this.votingDeadline = 0;
         this.clock = clock;
     }
     startVoting() {

@@ -16,13 +16,9 @@ exports.DefaultClock = DefaultClock;
  * All kill logic is server-side only
  */
 class KillSystem {
-    state;
-    roleAssignmentSystem;
-    clock;
-    isVenting;
-    // Private kill cooldown tracking per player (server-only)
-    killCooldownUntil = new Map();
     constructor(state, roleAssignmentSystem, clock, isVenting = () => false) {
+        // Private kill cooldown tracking per player (server-only)
+        this.killCooldownUntil = new Map();
         this.state = state;
         this.roleAssignmentSystem = roleAssignmentSystem;
         this.clock = clock || new DefaultClock();

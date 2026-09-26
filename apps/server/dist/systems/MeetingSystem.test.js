@@ -8,7 +8,6 @@ const shared_1 = require("@starfall/shared");
  * Deterministic clock for testing
  */
 class TestClock {
-    time;
     constructor(initialTime = 1000000) {
         this.time = initialTime;
     }

@@ -4,7 +4,6 @@ exports.AccountNotFoundError = exports.AccountValidationError = exports.LocalAcc
 const node_crypto_1 = require("node:crypto");
 const shared_1 = require("@starfall/shared");
 class LocalAccountService {
-    persistence;
     constructor(persistence) {
         this.persistence = persistence;
     }

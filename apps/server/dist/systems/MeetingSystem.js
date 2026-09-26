@@ -17,13 +17,11 @@ exports.DefaultClock = DefaultClock;
  * All meeting logic is server-side only
  */
 class MeetingSystem {
-    state;
-    clock;
-    // Private meeting tracking per player (server-only)
-    meetingsUsed = new Map(); // sessionId -> count of meetings used
-    meetingInitiator = null;
-    discussionEndTime = 0;
     constructor(state, clock) {
+        // Private meeting tracking per player (server-only)
+        this.meetingsUsed = new Map(); // sessionId -> count of meetings used
+        this.meetingInitiator = null;
+        this.discussionEndTime = 0;
         this.state = state;
         this.clock = clock || new DefaultClock();
     }
@@ -38,7 +36,10 @@ class MeetingSystem {
         }
         // Validate phase - only allowed during playing
         if (this.state.phase !== shared_1.GamePhase.Playing) {
-            return { success: false, reason: "Meeting can only be called during playing phase" };
+            return {
+                success: false,
+                reason: "Meeting can only be called during playing phase",
+            };
         }
         // Validate caller exists and is alive
         const caller = this.state.players.get(callerSessionId);
@@ -46,7 +47,10 @@ class MeetingSystem {
             return { success: false, reason: "Caller not found" };
         }
         if (caller.state !== shared_1.PlayerState.Alive) {
-            return { success: false, reason: "Only living players can call meetings" };
+            return {
+                success: false,
+                reason: "Only living players can call meetings",
+            };
         }
         // Check if caller has a meeting available
         const meetingsUsed = this.meetingsUsed.get(callerSessionId) || 0;
@@ -66,7 +70,8 @@ class MeetingSystem {
         // Transition to Meeting phase
         this.state.phase = shared_1.GamePhase.Meeting;
         // Set discussion end time
-        this.discussionEndTime = this.clock.now() + shared_1.GAME_CONFIG.DISCUSSION_TIME * 1000;
+        this.discussionEndTime =
+            this.clock.now() + shared_1.GAME_CONFIG.DISCUSSION_TIME * 1000;
         this.state.meetingEndTime = this.discussionEndTime;
         // Teleport all living players to meeting room positions
         this.teleportPlayersToMeetingRoom();
@@ -75,7 +80,7 @@ class MeetingSystem {
      * Teleport all living players to meeting room positions
      */
     teleportPlayersToMeetingRoom() {
-        const meetingRoom = shared_2.STARFALL_MAP.rooms.find(r => r.id === shared_2.STARFALL_MAP.meetingRoomId);
+        const meetingRoom = shared_2.STARFALL_MAP.rooms.find((r) => r.id === shared_2.STARFALL_MAP.meetingRoomId);
         if (!meetingRoom) {
             console.error("Meeting room not found in map definition");
             return;
@@ -171,6 +176,13 @@ class MeetingSystem {
         this.meetingsUsed.clear();
         this.meetingInitiator = null;
         this.discussionEndTime = 0;
+    }
+    /** Remove private per-player state after permanent departure. */
+    clearPlayer(sessionId) {
+        this.meetingsUsed.delete(sessionId);
+        if (this.meetingInitiator === sessionId) {
+            this.meetingInitiator = null;
+        }
     }
     /**
      * Set a custom clock (for testing)

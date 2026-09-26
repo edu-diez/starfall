@@ -26,11 +26,9 @@ exports.DefaultRandomSource = DefaultRandomSource;
  * Roles are never stored in public state - only delivered privately to each client
  */
 class RoleAssignmentSystem {
-    state;
-    randomSource;
-    // Private role map - never serialized to public state
-    roleMap = new Map();
     constructor(state, randomSource) {
+        // Private role map - never serialized to public state
+        this.roleMap = new Map();
         this.state = state;
         this.randomSource = randomSource || new DefaultRandomSource();
     }
@@ -134,6 +132,10 @@ class RoleAssignmentSystem {
      */
     clearRoles() {
         this.roleMap.clear();
+    }
+    /** Remove all private role state for a permanently departed player. */
+    clearPlayer(sessionId) {
+        this.roleMap.delete(sessionId);
     }
     /**
      * Set a custom random source (for testing)

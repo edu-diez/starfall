@@ -14,6 +14,9 @@ export declare class GameRoom extends Room<{
     private simulationInterval;
     private lastTickTime;
     private playerInputs;
+    private readonly messageRateLimiter;
+    /** Session IDs currently held by Colyseus for reconnecting clients. */
+    private reconnectingSessionIds;
     private lobbySystem;
     private colorSystem;
     private matchLifecycleSystem;
@@ -27,13 +30,17 @@ export declare class GameRoom extends Room<{
     onCreate(options: any): void;
     onAuth(_client: Client, _options: unknown, context: AuthContext): Promise<AccountProfile>;
     onJoin(client: Client, _options: unknown): void;
-    onLeave(client: Client, code?: number): void;
+    onDrop(client: Client, _code?: number): void;
+    onReconnect(client: Client): void;
+    onLeave(client: Client, _code?: number): void;
     onDispose(): void;
     private startSimulationLoop;
     private stopSimulationLoop;
     private tick;
     private handleJoin;
     private handleLeave;
+    /** Permanently remove a session only after consented leave or grace expiry. */
+    private handlePermanentLeave;
     private handleMove;
     private handleColorChange;
     private handleReady;
@@ -51,5 +58,9 @@ export declare class GameRoom extends Room<{
     private handleVoteResultsFinished;
     private clearAllPlayerInputs;
     private broadcastMeetingState;
+    /** Validate basic message size and server-private rate limits before routing. */
+    private acceptsMessage;
+    /** Restore only information that the reconnecting player is entitled to see. */
+    private sendPrivateRecoveryState;
 }
 //# sourceMappingURL=GameRoom.d.ts.map

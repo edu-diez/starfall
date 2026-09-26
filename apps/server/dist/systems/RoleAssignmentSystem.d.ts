@@ -64,6 +64,8 @@ export declare class RoleAssignmentSystem {
      * Clear all role assignments
      */
     clearRoles(): void;
+    /** Remove all private role state for a permanently departed player. */
+    clearPlayer(sessionId: string): void;
     /**
      * Set a custom random source (for testing)
      */

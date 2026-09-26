@@ -16,6 +16,9 @@ export declare class VictorySystem {
      * Returns true if the match has ended, false otherwise
      */
     evaluate(): boolean;
+    /** Evaluate a permanent departure without bypassing VictorySystem ownership. */
+    evaluateAfterDeparture(): boolean;
+    private evaluateForPhase;
     /**
      * Get living player counts by role
      */
