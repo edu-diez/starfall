@@ -209,6 +209,7 @@ class GameClient {
       this.setProfileFeedback("Loading account…");
       this.accountProfile = await this.accountClient.loadProfile();
       this.playerNameInput.value = this.accountProfile.displayName;
+      this.playerNameInput.disabled = false;
       this.joinBtn.disabled = false;
       this.setProfileFeedback(
         "Profile loaded. Choose a display name, then join.",
