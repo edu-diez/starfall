@@ -24,6 +24,7 @@ export default defineConfig({
     },
   },
   resolve: {
+    extensions: [".ts", ".js", ".mjs", ".json"],
     alias: {
       "@starfall/shared": resolve(workspaceRoot, "packages/shared/src"),
     },

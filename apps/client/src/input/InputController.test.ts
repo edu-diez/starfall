@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { GamePhase, PlayerRole } from "@starfall/shared";
 import {
   getAvailableActions,
   normalizeMovement,
   PlayerInputController,
 } from "./InputController";
+import { DesktopInputAdapter } from "./DesktopInputAdapter";
 import { TouchInputAdapter } from "./TouchInputAdapter";
 
 describe("PlayerInputController", () => {
@@ -54,6 +55,30 @@ describe("PlayerInputController", () => {
     ).handlePointerEnd({
       pointerId: 7,
     } as PointerEvent);
+    expect(controller.getMovement()).toEqual({ x: 0, y: 0 });
+  });
+
+  it("does not capture typing keys from text inputs", () => {
+    const controller = new PlayerInputController();
+    const adapter = new DesktopInputAdapter(controller, {
+      onAction: () => undefined,
+    });
+    const preventDefault = vi.fn();
+    const target = Object.assign(new EventTarget(), {
+      tagName: "INPUT",
+      isContentEditable: false,
+    });
+
+    (
+      adapter as unknown as { handleKeyDown: (event: KeyboardEvent) => void }
+    ).handleKeyDown({
+      key: "a",
+      target,
+      preventDefault,
+      repeat: false,
+    } as unknown as KeyboardEvent);
+
+    expect(preventDefault).not.toHaveBeenCalled();
     expect(controller.getMovement()).toEqual({ x: 0, y: 0 });
   });
 });

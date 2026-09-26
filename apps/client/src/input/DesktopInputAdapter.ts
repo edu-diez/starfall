@@ -39,6 +39,8 @@ export class DesktopInputAdapter {
   }
 
   private readonly handleKeyDown = (event: KeyboardEvent): void => {
+    if (this.isTextEntryTarget(event.target)) return;
+
     const key = event.key.toLowerCase();
     if (MOVEMENT_KEYS.has(key)) {
       event.preventDefault();
@@ -58,12 +60,26 @@ export class DesktopInputAdapter {
   };
 
   private readonly handleKeyUp = (event: KeyboardEvent): void => {
+    if (this.isTextEntryTarget(event.target)) return;
+
     const key = event.key.toLowerCase();
     if (!MOVEMENT_KEYS.has(key)) return;
     event.preventDefault();
     this.pressedKeys.delete(key);
     this.publishMovement();
   };
+
+  private isTextEntryTarget(target: EventTarget | null): boolean {
+    if (!target || typeof target !== "object") return false;
+
+    const element = target as HTMLElement;
+    return (
+      element.tagName === "INPUT" ||
+      element.tagName === "TEXTAREA" ||
+      element.tagName === "SELECT" ||
+      element.isContentEditable
+    );
+  }
 
   private readonly handleBlur = (): void => {
     this.pressedKeys.clear();

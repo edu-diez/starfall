@@ -280,7 +280,9 @@ class GameRoom extends colyseus_1.Room {
         try {
             const profile = await GameRoom.accountService.getProfile(accountId);
             const player = this.state.players.get(sessionId);
-            if (!player || player.accountId !== accountId || player.name === profile.displayName) {
+            if (!player ||
+                player.accountId !== accountId ||
+                player.name === profile.displayName) {
                 return;
             }
             player.name = profile.displayName;
@@ -432,7 +434,9 @@ class GameRoom extends colyseus_1.Room {
         if (!this.acceptsMessage(client, shared_1.MESSAGE_TYPES.MATCH_START, message) ||
             !(0, MessageSecurity_1.isRecord)(message) ||
             Object.keys(message).length > 0) {
-            client.send(shared_1.MESSAGE_TYPES.ERROR, { message: "Invalid match start request" });
+            client.send(shared_1.MESSAGE_TYPES.ERROR, {
+                message: "Invalid match start request",
+            });
             return;
         }
         // Only the host (first player) can start the match, or any player if we allow it
@@ -639,7 +643,10 @@ class GameRoom extends colyseus_1.Room {
         if (!this.acceptsMessage(client, shared_1.MESSAGE_TYPES.VENT_EXIT, message) ||
             !(0, MessageSecurity_1.isRecord)(message) ||
             Object.keys(message).length > 0) {
-            this.sendVentState(client, { success: false, reason: "Invalid vent exit request" });
+            this.sendVentState(client, {
+                success: false,
+                reason: "Invalid vent exit request",
+            });
             return;
         }
         const result = this.ventSystem.exit(client.sessionId);
@@ -666,8 +673,7 @@ class GameRoom extends colyseus_1.Room {
             return;
         }
         const targetSessionId = message.targetSessionId;
-        if (targetSessionId !== null &&
-            !(0, MessageSecurity_1.isBoundedIdentifier)(targetSessionId)) {
+        if (targetSessionId !== null && !(0, MessageSecurity_1.isBoundedIdentifier)(targetSessionId)) {
             client.send(shared_1.MESSAGE_TYPES.VOTE_SUBMITTED, {
                 success: false,
                 reason: "Vote target must be a player or abstention",
@@ -718,14 +724,19 @@ class GameRoom extends colyseus_1.Room {
     /** Validate basic message size and server-private rate limits before routing. */
     acceptsMessage(client, messageType, message) {
         if (!(0, MessageSecurity_1.isBoundedMessage)(message)) {
-            client.send(shared_1.MESSAGE_TYPES.ERROR, { message: "Message is too large or invalid" });
+            client.send(shared_1.MESSAGE_TYPES.ERROR, {
+                message: "Message is too large or invalid",
+            });
             return false;
         }
         const limit = MESSAGE_RATE_LIMITS[messageType];
-        if (!limit || this.messageRateLimiter.allows(client.sessionId, messageType, limit)) {
+        if (!limit ||
+            this.messageRateLimiter.allows(client.sessionId, messageType, limit)) {
             return true;
         }
-        client.send(shared_1.MESSAGE_TYPES.ERROR, { message: "Message rate limit exceeded" });
+        client.send(shared_1.MESSAGE_TYPES.ERROR, {
+            message: "Message rate limit exceeded",
+        });
         return false;
     }
     /** Restore only information that the reconnecting player is entitled to see. */
