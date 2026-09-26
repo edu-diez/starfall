@@ -13,8 +13,8 @@
     "format": "prettier --write src"
   },
   "dependencies": {
-    "@starfall/shared": "*",
-    "colyseus.js": "0.16.22"
+    "@colyseus/sdk": "^0.18.4",
+    "@starfall/shared": "*"
   },
   "devDependencies": {
     "@types/node": "26.6.3",
