@@ -61,7 +61,11 @@ function getServerUrl(): string {
   if (configuredUrl) return configuredUrl;
 
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const port = import.meta.env.DEV ? ":2567" : window.location.port ? `:${window.location.port}` : "";
+  const port = import.meta.env.DEV
+    ? ":2567"
+    : window.location.port
+      ? `:${window.location.port}`
+      : "";
   return `${protocol}//${window.location.hostname}${port}`;
 }
 
@@ -232,8 +236,10 @@ class GameClient {
       });
       this.playerNameInput.value = this.accountProfile.displayName;
       this.room.send(MESSAGE_TYPES.JOIN, {});
-      this.playerNameInput.disabled = true;
-      this.setProfileFeedback("Profile saved.");
+      this.joinBtn.disabled = false;
+      this.setProfileFeedback(
+        "Profile saved. You can still change your display name.",
+      );
     } catch (error) {
       this.joinBtn.disabled = false;
       this.setProfileFeedback(
@@ -1175,7 +1181,8 @@ class GameClient {
         const ready = document.createElement("span");
         ready.className = "player-ready";
         ready.textContent = "Ready";
-        ready.style.cssText = "font-size: 12px; color: #10b981; background: rgba(16, 185, 129, 0.2); padding: 2px 6px; border-radius: 4px;";
+        ready.style.cssText =
+          "font-size: 12px; color: #10b981; background: rgba(16, 185, 129, 0.2); padding: 2px 6px; border-radius: 4px;";
         div.appendChild(ready);
       }
       this.playersContainer.appendChild(div);
@@ -1284,7 +1291,9 @@ class GameClient {
   }
 
   private drawNetworkDiagnostics() {
-    const diagnostics = this.remoteInterpolator.getDiagnostics(performance.now());
+    const diagnostics = this.remoteInterpolator.getDiagnostics(
+      performance.now(),
+    );
     const age =
       diagnostics.latestSnapshotAgeMs === null
         ? "n/a"
@@ -1386,7 +1395,10 @@ class GameClient {
     const renderedPosition =
       player.sessionId === this.mySessionId
         ? { x: player.x, y: player.y }
-        : (this.remoteInterpolator.getPosition(player.sessionId, performance.now()) ?? {
+        : (this.remoteInterpolator.getPosition(
+            player.sessionId,
+            performance.now(),
+          ) ?? {
             x: player.x,
             y: player.y,
           });
