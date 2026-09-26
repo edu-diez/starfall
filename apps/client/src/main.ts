@@ -40,6 +40,7 @@ import {
 } from "./input/DesktopInputAdapter";
 import { TouchInputAdapter } from "./input/TouchInputAdapter";
 import { AccountClient } from "./account/AccountClient";
+import { RemoteSnapshotInterpolator } from "./presentation/RemoteSnapshotInterpolator";
 
 // Types for Colyseus room state
 interface PlayerData {
@@ -105,6 +106,8 @@ class GameClient {
   private isVenting = false;
   private currentVentNodeId: string | null = null;
   private connectedVentNodeIds: string[] = [];
+  /** Remote positions are rendered from client-local snapshot history only. */
+  private readonly remoteInterpolator = new RemoteSnapshotInterpolator();
 
   // Debug mode
   private debugMode: boolean = false;
@@ -174,6 +177,15 @@ class GameClient {
       if (e.key === "F3") {
         this.debugMode = !this.debugMode;
         console.log(`Debug mode: ${this.debugMode ? "ON" : "OFF"}`);
+      }
+    });
+  }
+
+  private recordRemoteSnapshots(state: GameRoomState) {
+    const receivedAt = performance.now();
+    state.players.forEach((player, sessionId) => {
+      if (sessionId !== this.mySessionId) {
+        this.remoteInterpolator.record(sessionId, player, receivedAt);
       }
     });
   }
@@ -882,6 +894,7 @@ class GameClient {
     if (!this.room) return;
 
     this.room.onStateChange((state) => {
+      this.recordRemoteSnapshots(state);
       this.renderPlayersList(state.players);
       this.updateVentUI();
       this.updateActionControls();
@@ -909,6 +922,7 @@ class GameClient {
     });
 
     this.room.onMessage(MESSAGE_TYPES.PLAYER_LEFT, (message) => {
+      this.remoteInterpolator.remove(message.sessionId);
       console.log("Player left:", message);
     });
 
@@ -999,6 +1013,8 @@ class GameClient {
       MESSAGE_TYPES.MEETING_STARTED,
       (message: MeetingStartedMessage) => {
         this.lastSentInput = { x: 0, y: 0 };
+        // Meeting teleports are authoritative discontinuities, not a path to blend.
+        this.remoteInterpolator.reset();
         this.showDiscussion(message.discussionEndTime);
       },
     );
@@ -1051,7 +1067,6 @@ class GameClient {
     );
 
     this.room.onStateChange((state) => {
-      this.renderPlayersList(state.players);
       if (state.phase === GamePhase.Playing && this.phaseUI) {
         this.hidePhaseUI();
       }
@@ -1233,10 +1248,27 @@ class GameClient {
       this.ctx.stroke();
     }
 
-    // Debug mode: draw collision boundaries
+    // Debug mode: draw collision boundaries and presentation diagnostics.
     if (this.debugMode) {
       this.drawDebugCollision(scale, offsetX, offsetY);
+      this.drawNetworkDiagnostics();
     }
+  }
+
+  private drawNetworkDiagnostics() {
+    const diagnostics = this.remoteInterpolator.getDiagnostics(performance.now());
+    const age =
+      diagnostics.latestSnapshotAgeMs === null
+        ? "n/a"
+        : `${Math.round(diagnostics.latestSnapshotAgeMs)}ms`;
+    this.ctx.fillStyle = "#bfdbfe";
+    this.ctx.font = "14px monospace";
+    this.ctx.textAlign = "left";
+    this.ctx.fillText(
+      `Remote snapshots: ${diagnostics.trackedPlayers} | latest: ${age}`,
+      16,
+      24,
+    );
   }
 
   private drawDebugCollision(scale: number, offsetX: number, offsetY: number) {
@@ -1323,8 +1355,15 @@ class GameClient {
     const offsetX = (this.canvas.width - GAME_CONFIG.MAP_WIDTH * scale) / 2;
     const offsetY = (this.canvas.height - GAME_CONFIG.MAP_HEIGHT * scale) / 2;
 
-    const screenX = offsetX + player.x * scale;
-    const screenY = offsetY + player.y * scale;
+    const renderedPosition =
+      player.sessionId === this.mySessionId
+        ? { x: player.x, y: player.y }
+        : (this.remoteInterpolator.getPosition(player.sessionId, performance.now()) ?? {
+            x: player.x,
+            y: player.y,
+          });
+    const screenX = offsetX + renderedPosition.x * scale;
+    const screenY = offsetY + renderedPosition.y * scale;
     const radius = GAME_CONFIG.PLAYER_RADIUS * scale;
 
     this.ctx.beginPath();

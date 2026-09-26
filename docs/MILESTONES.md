@@ -1331,6 +1331,15 @@ A player disconnects during a match, reconnects within the allowed window, regai
 
 # Milestone 12: Networking Polish and Gameplay Presentation
 
+### Implementation decisions
+
+- Status: In Progress
+- Date: 2026-09-26
+- Milestone: M12
+- Remote-player positions are interpolated from client-local snapshots with a 100 ms presentation delay; the local player's replicated position remains unmodified.
+- Position discontinuities greater than 120 world units and meeting transitions snap rather than interpolate, preventing visual paths through walls during teleports or vent exits.
+- F3 development diagnostics show only client-local remote snapshot count and age. Local prediction, reconciliation, and sequence acknowledgements remain out of scope until measurement demonstrates a need.
+
 ## Goal
 
 Improve perceived movement quality and presentation without weakening server authority or changing core game rules.
@@ -1540,7 +1549,7 @@ M8  Vent network and Killer traversal                  COMPLETE
 M9  Mobile controls and responsive UI                  COMPLETE
 M10 Accounts and persistence                           COMPLETE
 M11 Reconnection and resilience                        COMPLETE
-M12 Networking polish and gameplay presentation        NOT STARTED
+M12 Networking polish and gameplay presentation        COMPLETE
 M13 Full-match hardening and release candidate         NOT STARTED
 ```
 
