@@ -794,15 +794,18 @@ Before full reconnection is implemented:
 - Reevaluate victory conditions if a departure affects living role counts.
 - Ensure stale input and private runtime state are cleaned up.
 
-### Future reconnection behavior
+### Reconnection behavior
 
-Reconnection should use a stable authenticated identity and a limited reconnection window.
+Reconnection uses the stable authenticated account association and Colyseus' original held session ID with a limited server-owned grace window. During the window, the public player entity remains synchronized with `isConnected = false`, while stale movement input and incompatible private action state are neutralized.
 
-A reconnecting client should receive:
+A reconnecting client receives:
 
 - Current public room state.
 - Its own private role and cooldown information.
 - Current meeting or voting context where applicable.
+- Its own private vent state, if applicable.
+
+After the grace window expires, `GameRoom` removes the player and all private session state, then calls `VictorySystem` to evaluate any changed living-role counts. A separate fresh session for an account already represented in the room must not create or control a duplicate player.
 
 It must not receive another player's private data.
 

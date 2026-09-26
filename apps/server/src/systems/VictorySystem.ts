@@ -14,7 +14,10 @@ export class VictorySystem {
   private winner: PlayerRole | null = null;
   private endReason: string | null = null;
 
-  constructor(state: GameRoomState, roleAssignmentSystem: RoleAssignmentSystem) {
+  constructor(
+    state: GameRoomState,
+    roleAssignmentSystem: RoleAssignmentSystem,
+  ) {
     this.state = state;
     this.roleAssignmentSystem = roleAssignmentSystem;
   }
@@ -24,10 +27,24 @@ export class VictorySystem {
    * Returns true if the match has ended, false otherwise
    */
   evaluate(): boolean {
-    // Vote ejections are evaluated during result resolution; kills during play.
+    return this.evaluateForPhase(false);
+  }
+
+  /** Evaluate a permanent departure without bypassing VictorySystem ownership. */
+  evaluateAfterDeparture(): boolean {
+    return this.evaluateForPhase(true);
+  }
+
+  private evaluateForPhase(allowActiveMatchPhase: boolean): boolean {
+    const isNormalEvaluationPhase =
+      this.state.phase === GamePhase.Playing ||
+      this.state.phase === GamePhase.ResolvingVote;
+    const isDepartureEvaluationPhase =
+      this.state.phase === GamePhase.Meeting ||
+      this.state.phase === GamePhase.Voting;
     if (
-      this.state.phase !== GamePhase.Playing &&
-      this.state.phase !== GamePhase.ResolvingVote
+      !isNormalEvaluationPhase &&
+      !(allowActiveMatchPhase && isDepartureEvaluationPhase)
     ) {
       return false;
     }
@@ -35,7 +52,10 @@ export class VictorySystem {
     const livingCounts = this.getLivingRoleCounts();
 
     // Killer victory: Living Killers >= Living Crewmates
-    if (livingCounts.killers >= livingCounts.crewmates && livingCounts.killers > 0) {
+    if (
+      livingCounts.killers >= livingCounts.crewmates &&
+      livingCounts.killers > 0
+    ) {
       this.setWinner(PlayerRole.Killer, "Killer reached parity with Crewmates");
       return true;
     }

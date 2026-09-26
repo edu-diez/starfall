@@ -162,6 +162,11 @@ export class RoleAssignmentSystem {
     this.roleMap.clear();
   }
 
+  /** Remove all private role state for a permanently departed player. */
+  clearPlayer(sessionId: string): void {
+    this.roleMap.delete(sessionId);
+  }
+
   /**
    * Set a custom random source (for testing)
    */

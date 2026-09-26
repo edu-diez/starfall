@@ -12,6 +12,8 @@ export class Player extends Schema {
   @type("number") y: number = 0;
   @type("number") lastInputTimestamp: number = 0;
   @type("boolean") ready: boolean = false;
+  /** False only while the authenticated owner is within a reconnect grace window. */
+  @type("boolean") isConnected: boolean = true;
   @type("number") meetingsUsed: number = 0;
 }
 
@@ -45,6 +47,7 @@ export class GameRoomState extends Schema {
     player.y = 540;
     player.state = PlayerState.Alive;
     player.ready = false;
+    player.isConnected = true;
     return player;
   }
 }

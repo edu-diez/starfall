@@ -49,7 +49,10 @@ export class MeetingSystem {
 
     // Validate phase - only allowed during playing
     if (this.state.phase !== GamePhase.Playing) {
-      return { success: false, reason: "Meeting can only be called during playing phase" };
+      return {
+        success: false,
+        reason: "Meeting can only be called during playing phase",
+      };
     }
 
     // Validate caller exists and is alive
@@ -58,7 +61,10 @@ export class MeetingSystem {
       return { success: false, reason: "Caller not found" };
     }
     if (caller.state !== PlayerState.Alive) {
-      return { success: false, reason: "Only living players can call meetings" };
+      return {
+        success: false,
+        reason: "Only living players can call meetings",
+      };
     }
 
     // Check if caller has a meeting available
@@ -84,7 +90,8 @@ export class MeetingSystem {
     this.state.phase = GamePhase.Meeting;
 
     // Set discussion end time
-    this.discussionEndTime = this.clock.now() + GAME_CONFIG.DISCUSSION_TIME * 1000;
+    this.discussionEndTime =
+      this.clock.now() + GAME_CONFIG.DISCUSSION_TIME * 1000;
     this.state.meetingEndTime = this.discussionEndTime;
 
     // Teleport all living players to meeting room positions
@@ -95,7 +102,9 @@ export class MeetingSystem {
    * Teleport all living players to meeting room positions
    */
   private teleportPlayersToMeetingRoom(): void {
-    const meetingRoom = STARFALL_MAP.rooms.find(r => r.id === STARFALL_MAP.meetingRoomId);
+    const meetingRoom = STARFALL_MAP.rooms.find(
+      (r) => r.id === STARFALL_MAP.meetingRoomId,
+    );
     if (!meetingRoom) {
       console.error("Meeting room not found in map definition");
       return;
@@ -193,7 +202,8 @@ export class MeetingSystem {
             ? "voting"
             : null,
       initiatorSessionId: this.meetingInitiator,
-      discussionEndTime: this.state.phase === GamePhase.Meeting ? this.discussionEndTime : null,
+      discussionEndTime:
+        this.state.phase === GamePhase.Meeting ? this.discussionEndTime : null,
       meetingsRemaining: this.getMeetingsRemaining(sessionId),
     };
   }
@@ -205,6 +215,14 @@ export class MeetingSystem {
     this.meetingsUsed.clear();
     this.meetingInitiator = null;
     this.discussionEndTime = 0;
+  }
+
+  /** Remove private per-player state after permanent departure. */
+  clearPlayer(sessionId: string): void {
+    this.meetingsUsed.delete(sessionId);
+    if (this.meetingInitiator === sessionId) {
+      this.meetingInitiator = null;
+    }
   }
 
   /**

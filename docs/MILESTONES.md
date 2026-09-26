@@ -1177,6 +1177,16 @@ Do not invent real authentication or privacy requirements during implementation.
 
 # Milestone 11: Reconnection and Resilience
 
+### Implementation decisions
+
+- Status: Accepted
+- Date: 2026-09-26
+- Milestone: M11
+- The server holds an unexpectedly disconnected player's original Colyseus session for 30 seconds. The public player remains in the room with `isConnected = false`; active movement input and vent occupancy are cleared immediately.
+- A disconnected living player remains in the authoritative match, including as a valid target and eligible voter. They cannot submit actions while absent; an already submitted vote remains private and valid. Voting continues to its authoritative deadline unless all eligible voters have submitted.
+- A successful reconnect restores the original session ID and player entity. The server privately redelivers only that player's role, current cooldown state, meeting state, and vent state. Vent occupancy is not restored after a disconnect.
+- After the grace window, the server permanently removes public and private session state, removes voting eligibility, and asks `VictorySystem` to evaluate any resulting victory. A separate fresh session for an account already represented in the room is rejected.
+
 ## Goal
 
 Allow temporary disconnects without corrupting the match and restore the reconnecting player's public and private context safely.
@@ -1456,7 +1466,7 @@ M7  Voting, ejection, and complete victory flow        COMPLETE
 M8  Vent network and Killer traversal                  COMPLETE
 M9  Mobile controls and responsive UI                  COMPLETE
 M10 Accounts and persistence                           COMPLETE
-M11 Reconnection and resilience                        NOT STARTED
+M11 Reconnection and resilience                        COMPLETE
 M12 Networking polish and gameplay presentation        NOT STARTED
 M13 Full-match hardening and release candidate         NOT STARTED
 ```

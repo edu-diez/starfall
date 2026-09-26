@@ -102,6 +102,105 @@ describe("GameRoom", () => {
     expect(mockRoom.state.players.size).toBe(0);
   });
 
+  describe("Reconnection", () => {
+    it("neutralizes input and retains the existing player during the grace window", () => {
+      mockRoom.onCreate({});
+      const client = mockClient("client-1");
+      mockRoom.handleJoin(client, {});
+      mockRoom.state.phase = GamePhase.Playing;
+      mockRoom.handleMove(client, {
+        direction: { x: 1, y: 0 },
+        timestamp: Date.now(),
+      });
+      mockRoom.roleAssignmentSystem["roleMap"].set(
+        "client-1",
+        PlayerRole.Killer,
+      );
+      mockRoom.allowReconnection = vi.fn(() => new Promise(() => {}));
+
+      mockRoom.onDrop(client);
+
+      expect(mockRoom.playerInputs.has("client-1")).toBe(false);
+      expect(mockRoom.state.players.get("client-1")).toMatchObject({
+        isConnected: false,
+      });
+      expect(mockRoom.roleAssignmentSystem.getRole("client-1")).toBe(
+        PlayerRole.Killer,
+      );
+    });
+
+    it("restores the same player and sends private recovery only to the reconnecting client", () => {
+      mockRoom.onCreate({});
+      const client = mockClient("client-1");
+      mockRoom.handleJoin(client, {});
+      mockRoom.roleAssignmentSystem["roleMap"].set(
+        "client-1",
+        PlayerRole.Killer,
+      );
+      mockRoom.killSystem["killCooldownUntil"].set(
+        "client-1",
+        Date.now() + 10_000,
+      );
+      mockRoom.state.players.get("client-1")!.isConnected = false;
+      mockRoom.reconnectingSessionIds.add("client-1");
+      const reconnectedClient = mockClient("client-1");
+
+      mockRoom.onReconnect(reconnectedClient);
+
+      expect(mockRoom.state.players.size).toBe(1);
+      expect(mockRoom.state.players.get("client-1")?.isConnected).toBe(true);
+      expect(reconnectedClient.send).toHaveBeenCalledWith(
+        MESSAGE_TYPES.RECONNECTION_STATE,
+        expect.objectContaining({
+          role: PlayerRole.Killer,
+          killCooldownRemaining: expect.any(Number),
+        }),
+      );
+      expect(mockBroadcast).not.toHaveBeenCalledWith(
+        MESSAGE_TYPES.RECONNECTION_STATE,
+        expect.anything(),
+      );
+    });
+
+    it("removes public and private state only after permanent departure", () => {
+      mockRoom.onCreate({});
+      const client = mockClient("client-1");
+      mockRoom.handleJoin(client, {});
+      mockRoom.roleAssignmentSystem["roleMap"].set(
+        "client-1",
+        PlayerRole.Killer,
+      );
+      mockRoom.killSystem["killCooldownUntil"].set("client-1", Date.now());
+      mockRoom.meetingSystem["meetingsUsed"].set("client-1", 1);
+      mockRoom.votingSystem["eligibleVoters"].add("client-1");
+
+      mockRoom.handlePermanentLeave("client-1");
+
+      expect(mockRoom.state.players.has("client-1")).toBe(false);
+      expect(mockRoom.roleAssignmentSystem.getRole("client-1")).toBeUndefined();
+      expect(mockRoom.killSystem.getCooldownRemaining("client-1")).toBe(0);
+      expect(mockRoom.meetingSystem.getMeetingsRemaining("client-1")).toBe(1);
+      expect(mockRoom.votingSystem.getEligibleVoterIds()).not.toContain(
+        "client-1",
+      );
+    });
+
+    it("rejects a second session for an account already represented in the room", () => {
+      mockRoom.onCreate({});
+      const originalClient = mockClient("client-1");
+      const duplicateClient = mockClient("client-2");
+      duplicateClient.auth.id = originalClient.auth.id;
+      mockRoom.handleJoin(originalClient, {});
+
+      mockRoom.handleJoin(duplicateClient, {});
+
+      expect(mockRoom.state.players.size).toBe(1);
+      expect(duplicateClient.send).toHaveBeenCalledWith(MESSAGE_TYPES.ERROR, {
+        message: "Account already has a player in this room",
+      });
+    });
+  });
+
   it("rejects join when room is full", () => {
     mockRoom.onCreate({});
     // Use the actual max players from config (10)

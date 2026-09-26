@@ -45,6 +45,7 @@ export const GAME_CONFIG = {
   DISCUSSION_TIME: 30, // seconds
   VOTING_TIME: 60, // seconds
   VOTE_RESULTS_TIME: 5, // seconds
+  RECONNECTION_WINDOW_SECONDS: 30,
   MAX_PLAYERS: 10,
   MIN_PLAYERS: 4,
 } as const;
@@ -184,6 +185,7 @@ export const MESSAGE_TYPES = {
   VENT_TRAVEL: "ventTravel",
   VENT_EXIT: "ventExit",
   VENT_STATE: "ventState",
+  RECONNECTION_STATE: "reconnectionState",
   ACCOUNT_PROFILE: "accountProfile",
 } as const;
 
@@ -331,6 +333,13 @@ export interface VentTravelMessage {
 
 export interface VentExitMessage {
   // No payload: the server exits at the player's authoritative current node.
+}
+
+/** Private recovery state sent only to the reconnecting player. */
+export interface ReconnectionStateMessage {
+  role: PlayerRole | null;
+  killCooldownRemaining: number;
+  phase: GamePhase;
 }
 
 /** Private state sent only to the local Killer. */

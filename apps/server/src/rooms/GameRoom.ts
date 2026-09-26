@@ -29,6 +29,7 @@ import {
   VentEnterMessage,
   VentTravelMessage,
   VentStateMessage,
+  ReconnectionStateMessage,
   type AccountProfile,
 } from "@starfall/shared";
 import type { AuthContext } from "@colyseus/core";
@@ -77,6 +78,9 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
     string,
     { direction: Vec2; timestamp: number }
   >();
+
+  /** Session IDs currently held by Colyseus for reconnecting clients. */
+  private reconnectingSessionIds = new Set<string>();
 
   // Systems
   private lobbySystem!: LobbySystem;
@@ -216,9 +220,47 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
     console.log(`Client ${client.sessionId} joined`);
   }
 
-  override onLeave(client: Client, code?: number) {
-    console.log(`Client ${client.sessionId} left`);
-    this.handleLeave(client);
+  override onDrop(client: Client, _code?: number) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player) return;
+
+    // A dropped connection is neutral immediately but retains its authoritative
+    // entity and private state until the reconnect window expires.
+    player.isConnected = false;
+    this.playerInputs.delete(client.sessionId);
+    this.ventSystem.clearPlayer(client.sessionId);
+    this.reconnectingSessionIds.add(client.sessionId);
+    this.broadcast(MESSAGE_TYPES.PLAYER_LEFT, { sessionId: client.sessionId });
+
+    this.allowReconnection(
+      client,
+      GAME_CONFIG.RECONNECTION_WINDOW_SECONDS,
+    ).catch(() => {
+      this.handlePermanentLeave(client.sessionId);
+    });
+  }
+
+  override onReconnect(client: Client) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player) {
+      client.send(MESSAGE_TYPES.ERROR, {
+        message: "Reconnect session expired",
+      });
+      return;
+    }
+
+    player.isConnected = true;
+    this.playerInputs.delete(client.sessionId);
+    this.reconnectingSessionIds.delete(client.sessionId);
+    this.sendPrivateRecoveryState(client);
+  }
+
+  override onLeave(client: Client, _code?: number) {
+    // A dropped client that is still inside the Colyseus reconnection window is
+    // finalized by allowReconnection()'s rejection callback instead.
+    if (!this.reconnectingSessionIds.has(client.sessionId)) {
+      this.handlePermanentLeave(client.sessionId);
+    }
   }
 
   override onDispose() {
@@ -268,6 +310,7 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
     // Apply movement for each player based on their latest validated input
     this.state.players.forEach((player, sessionId) => {
       if (
+        !player.isConnected ||
         player.state !== PlayerState.Alive ||
         this.ventSystem.isVenting(sessionId)
       )
@@ -335,8 +378,18 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
       return;
     }
 
-    // Check if player already exists
-    if (this.state.players.has(client.sessionId)) {
+    // A reconnect uses Colyseus' original session ID and never sends JOIN.
+    // Reject a separately-created session for an account already represented in
+    // the room so it cannot create a duplicate controllable player.
+    if (
+      this.state.players.has(client.sessionId) ||
+      [...this.state.players.values()].some(
+        (player) => player.accountId === account.id,
+      )
+    ) {
+      client.send(MESSAGE_TYPES.ERROR, {
+        message: "Account already has a player in this room",
+      });
       return;
     }
 
@@ -391,30 +444,44 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
   }
 
   private handleLeave(client: Client) {
-    const player = this.state.players.get(client.sessionId);
-    if (player) {
-      this.lobbySystem.handlePlayerLeave(client.sessionId);
-      this.playerInputs.delete(client.sessionId);
-      this.ventSystem.clearPlayer(client.sessionId);
-      this.votingSystem.removePlayer(client.sessionId);
-      this.broadcast(MESSAGE_TYPES.PLAYER_LEFT, {
-        sessionId: client.sessionId,
-      });
+    this.handlePermanentLeave(client.sessionId);
+  }
 
-      // Broadcast updated lobby state to all
-      if (this.lobbySystem.isInLobby()) {
-        this.broadcast(
-          MESSAGE_TYPES.LOBBY_STATE,
-          this.lobbySystem.getLobbyState(),
-        );
-      }
+  /** Permanently remove a session only after consented leave or grace expiry. */
+  private handlePermanentLeave(sessionId: string) {
+    const player = this.state.players.get(sessionId);
+    if (!player) return;
+
+    this.reconnectingSessionIds.delete(sessionId);
+    this.playerInputs.delete(sessionId);
+    this.ventSystem.clearPlayer(sessionId);
+    this.votingSystem.removePlayer(sessionId);
+    this.meetingSystem.clearPlayer(sessionId);
+    this.killSystem.clearCooldown(sessionId);
+    this.roleAssignmentSystem.clearPlayer(sessionId);
+    this.lobbySystem.handlePlayerLeave(sessionId);
+    this.broadcast(MESSAGE_TYPES.PLAYER_LEFT, { sessionId });
+
+    if (this.lobbySystem.isInLobby()) {
+      this.broadcast(
+        MESSAGE_TYPES.LOBBY_STATE,
+        this.lobbySystem.getLobbyState(),
+      );
+      return;
+    }
+
+    // VictorySystem remains the sole owner of winner calculation, including a
+    // permanent departure during an active meeting or vote.
+    this.victorySystem.evaluateAfterDeparture();
+    if (this.victorySystem.isMatchEnded()) {
+      this.handleGameOver();
     }
   }
 
   private handleMove(client: Client, message: MoveMessage) {
     // Validate the player exists and is alive
     const player = this.state.players.get(client.sessionId);
-    if (!player || player.state !== PlayerState.Alive) {
+    if (!player || !player.isConnected || player.state !== PlayerState.Alive) {
       return;
     }
 
@@ -841,6 +908,30 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
         targetClient.send(MESSAGE_TYPES.MEETING_STATE, meetingState);
       }
     });
+  }
+
+  /** Restore only information that the reconnecting player is entitled to see. */
+  private sendPrivateRecoveryState(client: Client) {
+    const role = this.roleAssignmentSystem.getRole(client.sessionId) ?? null;
+    const recovery: ReconnectionStateMessage = {
+      role,
+      killCooldownRemaining: this.killSystem.getCooldownRemaining(
+        client.sessionId,
+      ),
+      phase: this.state.phase,
+    };
+    client.send(MESSAGE_TYPES.RECONNECTION_STATE, recovery);
+
+    if (role) {
+      client.send(MESSAGE_TYPES.ROLE_ASSIGNMENT, {
+        role,
+      } as RoleAssignmentMessage);
+    }
+    client.send(
+      MESSAGE_TYPES.MEETING_STATE,
+      this.meetingSystem.getMeetingState(client.sessionId),
+    );
+    this.sendVentState(client, { success: true });
   }
 }
 
