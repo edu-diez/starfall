@@ -112,6 +112,16 @@ Accounts, reconnection, production hardening, and advanced networking follow aft
 
 # Milestone 0: Repository and Toolchain Foundation
 
+### Implementation decisions
+
+- Status: Accepted
+- Date: 2026-09-24
+- Milestone: M0
+- The repository uses npm workspaces for `apps/*` and `packages/*`, with Node.js 20 or later and strict TypeScript 5.4.
+- The server uses Colyseus 0.15, the client uses Vite 5 and the matching Colyseus browser SDK, and all packages use Vitest 1.6 for tests.
+- The root owns unified development, build, type-check, test, lint, and format scripts; package-level scripts provide the corresponding isolated verification.
+- ESLint and Prettier are the selected linting and formatting tools.
+
 ## Goal
 
 Create a clean TypeScript workspace in which the server, client, and shared contracts can be developed and tested independently.
@@ -209,6 +219,17 @@ Exact script names may follow the chosen workspace conventions, but their purpos
 ---
 
 # Milestone 1: Connection, Spawning, and Authoritative Movement
+
+### Implementation decisions
+
+- Status: Accepted
+- Date: 2026-09-24
+- Milestone: M1
+- The server runs the authoritative movement simulation from the latest validated directional input; clients never submit positions.
+- The shared world is 1920 × 1080 units, with a server-defined player speed of 200 units per second and player radius of 16 units.
+- Directional input is rejected unless finite, normalized to prevent faster diagonal movement, and cleared when a player leaves.
+- Public synchronized player state contains identity and position only; latest input and rate-limit metadata remain server-private.
+- The initial implementation uses Canvas rendering and keyboard input, independent render and simulation loops, and basic world-bound clamping.
 
 ## Goal
 
@@ -314,6 +335,16 @@ input sequence or timing metadata, if used
 
 # Milestone 2: Lobby, Unique Colors, and Ready Flow
 
+### Implementation decisions
+
+- Status: Accepted
+- Date: 2026-09-24
+- Milestone: M2
+- The lobby supports 4–10 players and requires every connected lobby player to be ready before a match can start.
+- The shared catalog contains 21 color values. `ColorSystem` assigns the first available color on join, enforces unique changes, and releases colors on leave.
+- Color and ready changes are valid only during the lobby phase and are published as synchronized player state.
+- `LobbySystem` owns capacity, readiness, and start-eligibility checks; no secret gameplay state was added.
+
 ## Goal
 
 Create a functional pre-match lobby with unique colors and server-validated readiness.
@@ -402,6 +433,17 @@ No new secret gameplay state is required.
 ---
 
 # Milestone 3: Match Lifecycle and Private Role Assignment
+
+### Implementation decisions
+
+- Status: Accepted
+- Date: 2026-09-25
+- Milestone: M3
+- A start request is valid only for a start-eligible lobby and moves the phase through `assigningRoles` before `playing`; each start increments a match identifier.
+- MVP role assignment selects exactly one Killer and assigns every other participant the Crewmate role using an injectable random source.
+- Roles are retained in a server-only map and delivered only through a direct role-assignment message to the owning client; they never enter the public schema.
+- Joining is limited to the lobby, so late joins are rejected once role assignment begins.
+- Administrative reset returns the room to the lobby, clears timing state, and restores players to alive and unready.
 
 ## Goal
 
@@ -505,6 +547,16 @@ local private role message
 
 # Milestone 4: Map Boundaries and Collision
 
+### Implementation decisions
+
+- Status: Accepted
+- Date: 2026-09-25
+- Milestone: M4
+- The original Starfall map definition, including rooms, walls, doors, spawn points, and meeting-room identifiers, is shared data rather than `GameRoom` logic.
+- The map uses the existing 1920 × 1080 world coordinate system and is rendered by the client from the compatible shared definition.
+- `CollisionSystem` is server authoritative: it validates candidate movement against world bounds and static geometry, then attempts axis-separated sliding when a full move is blocked.
+- Spawn selection uses valid map spawn points and avoids living players where possible; collision boundaries are debug-only client presentation.
+
 ## Goal
 
 Replace the empty movement area with a simple original spaceship map and authoritative collision.
@@ -575,6 +627,16 @@ The map must be original. Do not copy room layouts, names, artwork, proportions,
 ---
 
 # Milestone 5: Kill System, Elimination, and Basic Victory
+
+### Implementation decisions
+
+- Status: Accepted
+- Date: 2026-09-25
+- Milestone: M5
+- Kill requests are valid only in the playing phase for an alive Killer targeting a different alive player within the authoritative 50-unit range.
+- Kill cooldowns use an injectable server clock, remain private per Killer, and last 30 seconds; client clocks and requests cannot bypass them.
+- A valid kill changes the target's public player state to dead. Eliminated players cannot move or perform active gameplay actions.
+- `VictorySystem` is the sole winner calculator. It ends the match when living Killers reach parity with living Crewmates, and publishes the winner and public end reason.
 
 ## Goal
 
@@ -678,6 +740,17 @@ private rejection reason where appropriate
 ---
 
 # Milestone 6: Emergency Meetings and Discussion Phase
+
+### Implementation decisions
+
+- Status: Accepted
+- Date: 2026-09-25
+- Milestone: M6
+- Each living player receives one emergency meeting use per match. The use is consumed only after the request passes playing-phase, player-state, and availability checks.
+- A valid meeting moves the room into the meeting/discussion phase, teleports living players to the shared map's meeting-room spawn points, and blocks movement and killing through phase validation.
+- Discussion timing is server owned, uses an injectable clock, and is configured for 30 seconds. Expiry emits the meeting-complete transition consumed by the voting flow.
+- Per-player meeting-use counts remain private server state. The meeting deadline is public for shared presentation, and each client receives its meeting-state view through a direct message.
+- `MeetingSystem` owns emergency-meeting eligibility, teleports, timing, and its private per-player counters.
 
 ## Goal
 
@@ -1455,13 +1528,13 @@ Do not use the decision register as a substitute for updating the authoritative 
 Update this section as work progresses.
 
 ```text
-M0  Repository and toolchain foundation                COMPLETED
-M1  Connection, spawning, and authoritative movement   COMPLETED
-M2  Lobby, unique colors, and ready flow               COMPLETED
-M3  Match lifecycle and private role assignment        COMPLETED
-M4  Map boundaries and collision                       COMPLETED
-M5  Kill system, elimination, and basic victory        COMPLETED
-M6  Emergency meetings and discussion phase            COMPLETED
+M0  Repository and toolchain foundation                COMPLETE
+M1  Connection, spawning, and authoritative movement   COMPLETE
+M2  Lobby, unique colors, and ready flow               COMPLETE
+M3  Match lifecycle and private role assignment        COMPLETE
+M4  Map boundaries and collision                       COMPLETE
+M5  Kill system, elimination, and basic victory        COMPLETE
+M6  Emergency meetings and discussion phase            COMPLETE
 M7  Voting, ejection, and complete victory flow        COMPLETE
 M8  Vent network and Killer traversal                  COMPLETE
 M9  Mobile controls and responsive UI                  COMPLETE
