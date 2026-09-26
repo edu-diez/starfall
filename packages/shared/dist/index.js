@@ -51,6 +51,7 @@ exports.GAME_CONFIG = {
     DISCUSSION_TIME: 30, // seconds
     VOTING_TIME: 60, // seconds
     VOTE_RESULTS_TIME: 5, // seconds
+    RECONNECTION_WINDOW_SECONDS: 30,
     MAX_PLAYERS: 10,
     MIN_PLAYERS: 4,
 };
@@ -153,5 +154,6 @@ exports.MESSAGE_TYPES = {
     VENT_TRAVEL: "ventTravel",
     VENT_EXIT: "ventExit",
     VENT_STATE: "ventState",
+    RECONNECTION_STATE: "reconnectionState",
     ACCOUNT_PROFILE: "accountProfile",
 };

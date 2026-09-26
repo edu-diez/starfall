@@ -36,6 +36,7 @@ export declare const GAME_CONFIG: {
     readonly DISCUSSION_TIME: 30;
     readonly VOTING_TIME: 60;
     readonly VOTE_RESULTS_TIME: 5;
+    readonly RECONNECTION_WINDOW_SECONDS: 30;
     readonly MAX_PLAYERS: 10;
     readonly MIN_PLAYERS: 4;
 };
@@ -94,6 +95,7 @@ export declare const MESSAGE_TYPES: {
     readonly VENT_TRAVEL: "ventTravel";
     readonly VENT_EXIT: "ventExit";
     readonly VENT_STATE: "ventState";
+    readonly RECONNECTION_STATE: "reconnectionState";
     readonly ACCOUNT_PROFILE: "accountProfile";
 };
 export type MessageType = (typeof MESSAGE_TYPES)[keyof typeof MESSAGE_TYPES];
@@ -211,6 +213,12 @@ export interface VentTravelMessage {
     destinationNodeId: string;
 }
 export interface VentExitMessage {
+}
+/** Private recovery state sent only to the reconnecting player. */
+export interface ReconnectionStateMessage {
+    role: PlayerRole | null;
+    killCooldownRemaining: number;
+    phase: GamePhase;
 }
 /** Private state sent only to the local Killer. */
 export interface VentStateMessage {
