@@ -909,6 +909,15 @@ Record decisions in the appropriate document.
 
 # Milestone 8: Vent Network and Killer Traversal
 
+### Implementation decisions
+
+- Status: Accepted
+- Date: 2026-09-25
+- Milestone: M8
+- Vent occupancy and traversal are private server runtime state. Other clients receive no vent entry, travel, exit, or `isVenting` public-state event; a vented Killer remains rendered at the public position where they entered until the server-authoritative exit updates that position.
+- Vent connections are bidirectional. Entry range is the map node's declared `radius` (currently 30 world units).
+- The owning Killer receives a private `ventState` message after every enter, travel, exit, or rejected request. It contains only their current node and connected destinations.
+
 ## Goal
 
 Add a server-authoritative vent or sewer network that only the Killer can enter and traverse.
@@ -1425,7 +1434,7 @@ M4  Map boundaries and collision                       COMPLETED
 M5  Kill system, elimination, and basic victory        COMPLETED
 M6  Emergency meetings and discussion phase            COMPLETED
 M7  Voting, ejection, and complete victory flow        COMPLETE
-M8  Vent network and Killer traversal                  NOT STARTED
+M8  Vent network and Killer traversal                  COMPLETE
 M9  Mobile controls and responsive UI                  NOT STARTED
 M10 Accounts and persistence                           NOT STARTED
 M11 Reconnection and resilience                        NOT STARTED

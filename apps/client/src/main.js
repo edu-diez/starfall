@@ -22,6 +22,13 @@ class GameClient {
     startEligibilityEl = null;
     roleRevealUI = null;
     startMatchBtn = null;
+    phaseUI = null;
+    phaseTimer = null;
+    ventUI = null;
+    ventFeedback = null;
+    isVenting = false;
+    currentVentNodeId = null;
+    connectedVentNodeIds = [];
     // Debug mode
     debugMode = false;
     // Input state
@@ -363,6 +370,113 @@ class GameClient {
         this.lobbyUI.classList.add("hidden");
         this.startInputSending();
     }
+    showPhaseUI(content) {
+        this.hidePhaseUI();
+        const panel = document.createElement("div");
+        panel.id = "match-phase-ui";
+        panel.style.cssText = `
+      position: fixed; inset: 0; z-index: 900; display: flex;
+      align-items: center; justify-content: center; background: rgba(15, 23, 42, 0.92);
+      pointer-events: auto; padding: 24px;
+    `;
+        panel.innerHTML = `<div style="width: min(560px, 100%); max-height: 90vh; overflow: auto; background: #1f2937; border: 1px solid #475569; border-radius: 12px; padding: 28px; text-align: center; color: #f8fafc;">${content}</div>`;
+        document.body.appendChild(panel);
+        this.phaseUI = panel;
+        return panel;
+    }
+    hidePhaseUI() {
+        if (this.phaseTimer !== null) {
+            clearInterval(this.phaseTimer);
+            this.phaseTimer = null;
+        }
+        this.phaseUI?.remove();
+        this.phaseUI = null;
+    }
+    startDeadlineTimer(element, deadline, prefix) {
+        const render = () => {
+            const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+            element.textContent = `${prefix}: ${remaining}s`;
+        };
+        render();
+        this.phaseTimer = window.setInterval(render, 250);
+    }
+    showDiscussion(deadline) {
+        const panel = this.showPhaseUI(`<h1 style="margin-bottom: 12px;">Emergency Meeting</h1><p id="phase-timer" style="font-size: 24px; color: #93c5fd;"></p><p style="margin-top: 16px; color: #cbd5e1;">Discuss the evidence. Voting begins when the server timer ends.</p>`);
+        this.startDeadlineTimer(panel.querySelector("#phase-timer"), deadline, "Discussion ends in");
+    }
+    showVoting(deadline) {
+        const livingPlayers = [...(this.room?.state.players.values() ?? [])]
+            .filter((player) => player.state === PlayerState.Alive);
+        const candidates = livingPlayers.map((player) => `<button data-vote-target="${player.sessionId}" style="margin: 6px;">Vote ${player.name}</button>`).join("");
+        const panel = this.showPhaseUI(`<h1 style="margin-bottom: 12px;">Vote</h1><p id="phase-timer" style="font-size: 24px; color: #93c5fd;"></p><p id="vote-feedback" style="min-height: 24px; margin: 16px 0; color: #cbd5e1;">Choose a living player or abstain. You may change your vote.</p><div>${candidates}</div><button data-vote-target="" style="margin-top: 14px;">Abstain</button>`);
+        this.startDeadlineTimer(panel.querySelector("#phase-timer"), deadline, "Voting ends in");
+        panel.querySelectorAll("button[data-vote-target]").forEach((button) => {
+            button.addEventListener("click", () => {
+                const rawTarget = button.dataset.voteTarget ?? "";
+                this.submitVote(rawTarget || null);
+            });
+        });
+    }
+    submitVote(targetSessionId) {
+        if (!this.room)
+            return;
+        const message = { targetSessionId };
+        this.room.send(MESSAGE_TYPES.VOTE, message);
+    }
+    showVoteResults(message) {
+        const playerName = (sessionId) => this.room?.state.players.get(sessionId)?.name ?? sessionId;
+        const totals = Object.entries(message.totals)
+            .map(([sessionId, total]) => `<li>${playerName(sessionId)}: ${total}</li>`)
+            .join("") || "<li>No player votes</li>";
+        const ejection = message.ejectedSessionId
+            ? `<p style="margin-top: 16px; color: #fca5a5;"><strong>${playerName(message.ejectedSessionId)}</strong> was ejected. Role: <strong>${message.ejectedRole}</strong>.</p>`
+            : "<p style=\"margin-top: 16px; color: #cbd5e1;\">No player was ejected.</p>";
+        const panel = this.showPhaseUI(`<h1>Vote Results</h1><ul style="list-style: none; margin: 16px 0;">${totals}</ul><p>Abstentions: ${message.abstainVotes}</p>${ejection}<p id="phase-timer" style="margin-top: 20px; color: #93c5fd;"></p>`);
+        this.startDeadlineTimer(panel.querySelector("#phase-timer"), message.resultsEndTime, "Returning to play in");
+    }
+    showGameOver(winner, reason) {
+        this.showPhaseUI(`<h1 style="color: ${winner === PlayerRole.Killer ? "#f87171" : "#86efac"};">${winner === PlayerRole.Killer ? "Killer Victory" : "Crewmate Victory"}</h1><p style="margin-top: 16px; color: #cbd5e1;">${reason}</p>`);
+    }
+    updateVentUI(message) {
+        const canUseVents = this.myRole === PlayerRole.Killer && this.room?.state.phase === GamePhase.Playing;
+        if (!canUseVents) {
+            this.ventUI?.remove();
+            this.ventUI = null;
+            this.ventFeedback = null;
+            return;
+        }
+        if (!this.ventUI) {
+            this.ventUI = document.createElement("div");
+            this.ventUI.id = "vent-controls";
+            this.ventUI.style.cssText = "position:fixed;right:20px;bottom:20px;z-index:800;width:min(270px,calc(100vw - 40px));padding:14px;background:rgba(31,41,55,.94);border:1px solid #ef4444;border-radius:10px;color:#f8fafc;text-align:center;";
+            document.body.appendChild(this.ventUI);
+        }
+        const localPlayer = this.mySessionId ? this.room?.state.players.get(this.mySessionId) : undefined;
+        const nearbyNode = !this.isVenting && localPlayer
+            ? STARFALL_MAP.ventNodes.find((node) => Math.hypot(localPlayer.x - node.x, localPlayer.y - node.y) <= node.radius)
+            : undefined;
+        const destinations = this.connectedVentNodeIds
+            .map((nodeId) => STARFALL_MAP.ventNodes.find((node) => node.id === nodeId))
+            .filter((node) => Boolean(node));
+        this.ventUI.innerHTML = this.isVenting
+            ? `<strong style="color:#fca5a5;">Inside vent: ${this.currentVentNodeId}</strong><div style="margin-top:10px;display:flex;gap:6px;justify-content:center;flex-wrap:wrap;">${destinations.map((node) => `<button data-vent-travel="${node.id}">Travel to ${node.roomId}</button>`).join("")}</div><button data-vent-exit style="margin-top:10px;">Exit vent</button><p id="vent-feedback" style="min-height:18px;margin:8px 0 0;color:#cbd5e1;"></p>`
+            : `<strong>Vent</strong><p style="margin:8px 0;color:#cbd5e1;">${nearbyNode ? `At ${nearbyNode.roomId} vent.` : "Approach a vent to enter."}</p>${nearbyNode ? `<button data-vent-enter="${nearbyNode.id}">Enter vent</button>` : ""}<p id="vent-feedback" style="min-height:18px;margin:8px 0 0;color:#cbd5e1;"></p>`;
+        this.ventFeedback = this.ventUI.querySelector("#vent-feedback");
+        if (message?.reason && this.ventFeedback)
+            this.ventFeedback.textContent = message.reason;
+        this.ventUI.querySelector("[data-vent-enter]")?.addEventListener("click", (event) => {
+            const nodeId = event.currentTarget.dataset.ventEnter;
+            this.room?.send(MESSAGE_TYPES.VENT_ENTER, { nodeId });
+        });
+        this.ventUI.querySelectorAll("[data-vent-travel]").forEach((button) => {
+            button.addEventListener("click", () => {
+                this.room?.send(MESSAGE_TYPES.VENT_TRAVEL, { destinationNodeId: button.dataset.ventTravel });
+            });
+        });
+        this.ventUI.querySelector("[data-vent-exit]")?.addEventListener("click", () => {
+            this.room?.send(MESSAGE_TYPES.VENT_EXIT, {});
+        });
+    }
     handleKeyDown(e) {
         // Prevent default for game keys
         if ([
@@ -420,6 +534,7 @@ class GameClient {
             return;
         this.room.onStateChange((state) => {
             this.renderPlayersList(state.players);
+            this.updateVentUI();
         });
         this.room.onMessage(MESSAGE_TYPES.WELCOME, (message) => {
             this.mySessionId = message.sessionId;
@@ -482,6 +597,45 @@ class GameClient {
             console.log("Role assigned:", message);
             this.myRole = message.role;
             this.showRoleReveal(message.role);
+            this.updateVentUI();
+        });
+        this.room.onMessage(MESSAGE_TYPES.VENT_STATE, (message) => {
+            this.isVenting = message.isVenting;
+            this.currentVentNodeId = message.currentNodeId;
+            this.connectedVentNodeIds = message.connectedNodeIds;
+            this.lastSentInput = { x: 0, y: 0 };
+            this.updateVentUI(message);
+        });
+        this.room.onMessage(MESSAGE_TYPES.MEETING_STARTED, (message) => {
+            this.lastSentInput = { x: 0, y: 0 };
+            this.showDiscussion(message.discussionEndTime);
+        });
+        this.room.onMessage(MESSAGE_TYPES.MEETING_STATE, (message) => {
+            if (message.phase === "discussion" && message.discussionEndTime && !this.phaseUI) {
+                this.showDiscussion(message.discussionEndTime);
+            }
+        });
+        this.room.onMessage(MESSAGE_TYPES.VOTING_STARTED, (message) => {
+            this.showVoting(message.votingDeadline);
+        });
+        this.room.onMessage(MESSAGE_TYPES.VOTE_SUBMITTED, (message) => {
+            const feedback = this.phaseUI?.querySelector("#vote-feedback");
+            if (feedback) {
+                feedback.textContent = message.success ? "Vote submitted. You may still change it." : message.reason ?? "Vote rejected.";
+            }
+        });
+        this.room.onMessage(MESSAGE_TYPES.VOTING_RESULTS, (message) => {
+            this.showVoteResults(message);
+        });
+        this.room.onMessage(MESSAGE_TYPES.GAME_OVER, (message) => {
+            this.showGameOver(message.winner, message.reason);
+            this.stopInputSending();
+        });
+        this.room.onStateChange((state) => {
+            this.renderPlayersList(state.players);
+            if (state.phase === GamePhase.Playing && this.phaseUI) {
+                this.hidePhaseUI();
+            }
         });
         this.room.onMessage(MESSAGE_TYPES.ERROR, (message) => {
             console.error("Server error:", message);
@@ -495,7 +649,13 @@ class GameClient {
             this.lobbyUI.classList.remove("hidden");
             this.stopInputSending();
             this.hideRoleReveal();
+            this.hidePhaseUI();
+            this.ventUI?.remove();
+            this.ventUI = null;
             this.myRole = null;
+            this.isVenting = false;
+            this.currentVentNodeId = null;
+            this.connectedVentNodeIds = [];
         });
         this.room.onError((code, message) => {
             console.error("Room error:", code, message);
@@ -516,7 +676,7 @@ class GameClient {
         }
     }
     sendMovementInput() {
-        if (!this.room || !this.mySessionId)
+        if (!this.room || !this.mySessionId || this.isVenting)
             return;
         const direction = this.getInputDirection();
         // Only send if input changed (optimization)

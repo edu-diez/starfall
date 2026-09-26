@@ -27,6 +27,7 @@ export class KillSystem {
   private state: GameRoomState;
   private roleAssignmentSystem: RoleAssignmentSystem;
   private clock: Clock;
+  private isVenting: (sessionId: string) => boolean;
 
   // Private kill cooldown tracking per player (server-only)
   private killCooldownUntil = new Map<string, number>();
@@ -34,11 +35,13 @@ export class KillSystem {
   constructor(
     state: GameRoomState,
     roleAssignmentSystem: RoleAssignmentSystem,
-    clock?: Clock
+    clock?: Clock,
+    isVenting: (sessionId: string) => boolean = () => false,
   ) {
     this.state = state;
     this.roleAssignmentSystem = roleAssignmentSystem;
     this.clock = clock || new DefaultClock();
+    this.isVenting = isVenting;
   }
 
   /**
@@ -63,6 +66,9 @@ export class KillSystem {
     // Validate killer has Killer role
     if (!this.roleAssignmentSystem.isKiller(killerSessionId)) {
       return { success: false, reason: "Only the Killer can kill" };
+    }
+    if (this.isVenting(killerSessionId)) {
+      return { success: false, reason: "Cannot kill while inside a vent" };
     }
 
     // Validate target exists and is alive

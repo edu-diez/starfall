@@ -102,4 +102,8 @@ exports.MESSAGE_TYPES = {
     VOTE_SUBMITTED: "voteSubmitted",
     VOTING_STARTED: "votingStarted",
     VOTING_RESULTS: "votingResults",
+    VENT_ENTER: "ventEnter",
+    VENT_TRAVEL: "ventTravel",
+    VENT_EXIT: "ventExit",
+    VENT_STATE: "ventState",
 };

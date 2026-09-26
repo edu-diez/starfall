@@ -101,6 +101,10 @@ export const MESSAGE_TYPES = {
   VOTE_SUBMITTED: "voteSubmitted",
   VOTING_STARTED: "votingStarted",
   VOTING_RESULTS: "votingResults",
+  VENT_ENTER: "ventEnter",
+  VENT_TRAVEL: "ventTravel",
+  VENT_EXIT: "ventExit",
+  VENT_STATE: "ventState",
 } as const;
 
 export type MessageType = (typeof MESSAGE_TYPES)[keyof typeof MESSAGE_TYPES];
@@ -231,4 +235,25 @@ export interface VotingResultsMessage {
   ejectedSessionId: string | null;
   ejectedRole: PlayerRole | null;
   resultsEndTime: number;
+}
+
+export interface VentEnterMessage {
+  nodeId: string;
+}
+
+export interface VentTravelMessage {
+  destinationNodeId: string;
+}
+
+export interface VentExitMessage {
+  // No payload: the server exits at the player's authoritative current node.
+}
+
+/** Private state sent only to the local Killer. */
+export interface VentStateMessage {
+  success: boolean;
+  isVenting: boolean;
+  currentNodeId: string | null;
+  connectedNodeIds: string[];
+  reason?: string;
 }

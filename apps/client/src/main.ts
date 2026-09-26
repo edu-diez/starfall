@@ -18,6 +18,9 @@ import {
   VotingStartedMessage,
   VotingResultsMessage,
   VoteMessage,
+  VentEnterMessage,
+  VentTravelMessage,
+  VentStateMessage,
   COLORS,
   STARFALL_MAP,
   CollisionRect,
@@ -76,6 +79,11 @@ class GameClient {
   private startMatchBtn: HTMLButtonElement | null = null;
   private phaseUI: HTMLElement | null = null;
   private phaseTimer: number | null = null;
+  private ventUI: HTMLElement | null = null;
+  private ventFeedback: HTMLElement | null = null;
+  private isVenting = false;
+  private currentVentNodeId: string | null = null;
+  private connectedVentNodeIds: string[] = [];
 
   // Debug mode
   private debugMode: boolean = false;
@@ -525,6 +533,50 @@ class GameClient {
     this.showPhaseUI(`<h1 style="color: ${winner === PlayerRole.Killer ? "#f87171" : "#86efac"};">${winner === PlayerRole.Killer ? "Killer Victory" : "Crewmate Victory"}</h1><p style="margin-top: 16px; color: #cbd5e1;">${reason}</p>`);
   }
 
+  private updateVentUI(message?: VentStateMessage) {
+    const canUseVents = this.myRole === PlayerRole.Killer && this.room?.state.phase === GamePhase.Playing;
+    if (!canUseVents) {
+      this.ventUI?.remove();
+      this.ventUI = null;
+      this.ventFeedback = null;
+      return;
+    }
+
+    if (!this.ventUI) {
+      this.ventUI = document.createElement("div");
+      this.ventUI.id = "vent-controls";
+      this.ventUI.style.cssText = "position:fixed;right:20px;bottom:20px;z-index:800;width:min(270px,calc(100vw - 40px));padding:14px;background:rgba(31,41,55,.94);border:1px solid #ef4444;border-radius:10px;color:#f8fafc;text-align:center;";
+      document.body.appendChild(this.ventUI);
+    }
+
+    const localPlayer = this.mySessionId ? this.room?.state.players.get(this.mySessionId) : undefined;
+    const nearbyNode = !this.isVenting && localPlayer
+      ? STARFALL_MAP.ventNodes.find((node) => Math.hypot(localPlayer.x - node.x, localPlayer.y - node.y) <= node.radius)
+      : undefined;
+    const destinations = this.connectedVentNodeIds
+      .map((nodeId) => STARFALL_MAP.ventNodes.find((node) => node.id === nodeId))
+      .filter((node): node is NonNullable<typeof node> => Boolean(node));
+
+    this.ventUI.innerHTML = this.isVenting
+      ? `<strong style="color:#fca5a5;">Inside vent: ${this.currentVentNodeId}</strong><div style="margin-top:10px;display:flex;gap:6px;justify-content:center;flex-wrap:wrap;">${destinations.map((node) => `<button data-vent-travel="${node.id}">Travel to ${node.roomId}</button>`).join("")}</div><button data-vent-exit style="margin-top:10px;">Exit vent</button><p id="vent-feedback" style="min-height:18px;margin:8px 0 0;color:#cbd5e1;"></p>`
+      : `<strong>Vent</strong><p style="margin:8px 0;color:#cbd5e1;">${nearbyNode ? `At ${nearbyNode.roomId} vent.` : "Approach a vent to enter."}</p>${nearbyNode ? `<button data-vent-enter="${nearbyNode.id}">Enter vent</button>` : ""}<p id="vent-feedback" style="min-height:18px;margin:8px 0 0;color:#cbd5e1;"></p>`;
+    this.ventFeedback = this.ventUI.querySelector("#vent-feedback");
+    if (message?.reason && this.ventFeedback) this.ventFeedback.textContent = message.reason;
+
+    this.ventUI.querySelector<HTMLButtonElement>("[data-vent-enter]")?.addEventListener("click", (event) => {
+      const nodeId = (event.currentTarget as HTMLButtonElement).dataset.ventEnter!;
+      this.room?.send(MESSAGE_TYPES.VENT_ENTER, { nodeId } as VentEnterMessage);
+    });
+    this.ventUI.querySelectorAll<HTMLButtonElement>("[data-vent-travel]").forEach((button) => {
+      button.addEventListener("click", () => {
+        this.room?.send(MESSAGE_TYPES.VENT_TRAVEL, { destinationNodeId: button.dataset.ventTravel! } as VentTravelMessage);
+      });
+    });
+    this.ventUI.querySelector<HTMLButtonElement>("[data-vent-exit]")?.addEventListener("click", () => {
+      this.room?.send(MESSAGE_TYPES.VENT_EXIT, {});
+    });
+  }
+
   private handleKeyDown(e: KeyboardEvent) {
     // Prevent default for game keys
     if (
@@ -589,6 +641,7 @@ class GameClient {
 
     this.room.onStateChange((state) => {
       this.renderPlayersList(state.players);
+      this.updateVentUI();
     });
 
     this.room.onMessage(MESSAGE_TYPES.WELCOME, (message) => {
@@ -667,6 +720,15 @@ class GameClient {
       console.log("Role assigned:", message);
       this.myRole = message.role;
       this.showRoleReveal(message.role);
+      this.updateVentUI();
+    });
+
+    this.room.onMessage(MESSAGE_TYPES.VENT_STATE, (message: VentStateMessage) => {
+      this.isVenting = message.isVenting;
+      this.currentVentNodeId = message.currentNodeId;
+      this.connectedVentNodeIds = message.connectedNodeIds;
+      this.lastSentInput = { x: 0, y: 0 };
+      this.updateVentUI(message);
     });
 
     this.room.onMessage(MESSAGE_TYPES.MEETING_STARTED, (message: MeetingStartedMessage) => {
@@ -721,7 +783,12 @@ class GameClient {
       this.stopInputSending();
       this.hideRoleReveal();
       this.hidePhaseUI();
+      this.ventUI?.remove();
+      this.ventUI = null;
       this.myRole = null;
+      this.isVenting = false;
+      this.currentVentNodeId = null;
+      this.connectedVentNodeIds = [];
     });
 
     this.room.onError((code, message) => {
@@ -746,7 +813,7 @@ class GameClient {
   }
 
   private sendMovementInput() {
-    if (!this.room || !this.mySessionId) return;
+    if (!this.room || !this.mySessionId || this.isVenting) return;
 
     const direction = this.getInputDirection();
 

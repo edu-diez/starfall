@@ -434,6 +434,9 @@ Owns:
 - Entry, traversal, and exit rules.
 - Authoritative position updates.
 - Blocking incompatible actions while venting.
+- Private `sessionId -> currentVentNodeId` occupancy state.
+
+Vent occupancy is not public synchronized state. The owning Killer receives a private vent-state message; other clients receive no vent event or role-inferential field. Public position remains at the entry location until the authoritative exit position is applied. Map vent connections are bidirectional, and each node's map `radius` is the authoritative entry range.
 
 #### `VictorySystem`
 

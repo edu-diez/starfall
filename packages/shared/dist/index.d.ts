@@ -66,6 +66,10 @@ export declare const MESSAGE_TYPES: {
     readonly VOTE_SUBMITTED: "voteSubmitted";
     readonly VOTING_STARTED: "votingStarted";
     readonly VOTING_RESULTS: "votingResults";
+    readonly VENT_ENTER: "ventEnter";
+    readonly VENT_TRAVEL: "ventTravel";
+    readonly VENT_EXIT: "ventExit";
+    readonly VENT_STATE: "ventState";
 };
 export type MessageType = (typeof MESSAGE_TYPES)[keyof typeof MESSAGE_TYPES];
 export interface MoveMessage {
@@ -170,5 +174,21 @@ export interface VotingResultsMessage {
     ejectedSessionId: string | null;
     ejectedRole: PlayerRole | null;
     resultsEndTime: number;
+}
+export interface VentEnterMessage {
+    nodeId: string;
+}
+export interface VentTravelMessage {
+    destinationNodeId: string;
+}
+export interface VentExitMessage {
+}
+/** Private state sent only to the local Killer. */
+export interface VentStateMessage {
+    success: boolean;
+    isVenting: boolean;
+    currentNodeId: string | null;
+    connectedNodeIds: string[];
+    reason?: string;
 }
 //# sourceMappingURL=index.d.ts.map

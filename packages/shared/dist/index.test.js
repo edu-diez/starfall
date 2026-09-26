@@ -46,6 +46,10 @@ const index_1 = require("../src/index");
         (0, vitest_1.expect)(index_1.MESSAGE_TYPES.ERROR).toBe("error");
         (0, vitest_1.expect)(index_1.MESSAGE_TYPES.VOTE).toBe("vote");
         (0, vitest_1.expect)(index_1.MESSAGE_TYPES.VOTING_RESULTS).toBe("votingResults");
+        (0, vitest_1.expect)(index_1.MESSAGE_TYPES.VENT_ENTER).toBe("ventEnter");
+        (0, vitest_1.expect)(index_1.MESSAGE_TYPES.VENT_TRAVEL).toBe("ventTravel");
+        (0, vitest_1.expect)(index_1.MESSAGE_TYPES.VENT_EXIT).toBe("ventExit");
+        (0, vitest_1.expect)(index_1.MESSAGE_TYPES.VENT_STATE).toBe("ventState");
     });
     (0, vitest_1.it)("MoveMessage type works correctly", () => {
         const msg = {

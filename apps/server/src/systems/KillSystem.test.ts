@@ -204,6 +204,15 @@ describe("KillSystem", () => {
     expect(result.reason).toBe("Target out of range");
   });
 
+  it("rejects a Killer attack while the Killer is venting", () => {
+    setupPlayers("killer", "target", 30);
+    killSystem = new KillSystem(state, roleAssignmentSystem, testClock, (sessionId) => sessionId === "killer");
+
+    const result = killSystem.attemptKill("killer", "target");
+
+    expect(result).toMatchObject({ success: false, reason: "Cannot kill while inside a vent" });
+  });
+
   it("rejects kill during cooldown", () => {
     setupPlayers("killer", "target1", 30);
 

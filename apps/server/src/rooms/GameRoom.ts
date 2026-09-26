@@ -26,6 +26,9 @@ import {
   VoteSubmittedMessage,
   VotingStartedMessage,
   VotingResultsMessage,
+  VentEnterMessage,
+  VentTravelMessage,
+  VentStateMessage,
 } from "@starfall/shared";
 import { LobbySystem } from "../systems/LobbySystem";
 import { ColorSystem } from "../systems/ColorSystem";
@@ -36,6 +39,7 @@ import { KillSystem, DefaultClock } from "../systems/KillSystem";
 import { VictorySystem } from "../systems/VictorySystem";
 import { MeetingSystem } from "../systems/MeetingSystem";
 import { VotingSystem } from "../systems/VotingSystem";
+import { VentSystem } from "../systems/VentSystem";
 
 export class GameRoom extends Room<GameRoomState> {
   override maxClients = GAME_CONFIG.MAX_PLAYERS;
@@ -62,6 +66,7 @@ export class GameRoom extends Room<GameRoomState> {
   private victorySystem!: VictorySystem;
   private meetingSystem!: MeetingSystem;
   private votingSystem!: VotingSystem;
+  private ventSystem!: VentSystem;
 
   override onCreate(options: any) {
     this.setState(new GameRoomState());
@@ -73,7 +78,13 @@ export class GameRoom extends Room<GameRoomState> {
     this.matchLifecycleSystem = new MatchLifecycleSystem(this.state, this.lobbySystem);
     this.roleAssignmentSystem = new RoleAssignmentSystem(this.state, new DefaultRandomSource());
     this.collisionSystem = new CollisionSystem(this.state);
-    this.killSystem = new KillSystem(this.state, this.roleAssignmentSystem, new DefaultClock());
+    this.ventSystem = new VentSystem(this.state, this.roleAssignmentSystem);
+    this.killSystem = new KillSystem(
+      this.state,
+      this.roleAssignmentSystem,
+      new DefaultClock(),
+      (sessionId) => this.ventSystem.isVenting(sessionId),
+    );
     this.victorySystem = new VictorySystem(this.state, this.roleAssignmentSystem);
     this.meetingSystem = new MeetingSystem(this.state, new DefaultClock());
     this.votingSystem = new VotingSystem(this.state, this.roleAssignmentSystem, new DefaultClock());
@@ -130,6 +141,16 @@ export class GameRoom extends Room<GameRoomState> {
 
     this.onMessage(MESSAGE_TYPES.VOTE, (client: Client, message: VoteMessage) => {
       this.handleVote(client, message);
+    });
+
+    this.onMessage(MESSAGE_TYPES.VENT_ENTER, (client: Client, message: VentEnterMessage) => {
+      this.handleVentEnter(client, message);
+    });
+    this.onMessage(MESSAGE_TYPES.VENT_TRAVEL, (client: Client, message: VentTravelMessage) => {
+      this.handleVentTravel(client, message);
+    });
+    this.onMessage(MESSAGE_TYPES.VENT_EXIT, (client: Client) => {
+      this.handleVentExit(client);
     });
 
     // Start the fixed-rate simulation loop
@@ -191,7 +212,7 @@ export class GameRoom extends Room<GameRoomState> {
 
     // Apply movement for each player based on their latest validated input
     this.state.players.forEach((player, sessionId) => {
-      if (player.state !== PlayerState.Alive) return;
+      if (player.state !== PlayerState.Alive || this.ventSystem.isVenting(sessionId)) return;
 
       const input = this.playerInputs.get(sessionId);
       if (!input) return;
@@ -292,6 +313,7 @@ export class GameRoom extends Room<GameRoomState> {
     if (player) {
       this.lobbySystem.handlePlayerLeave(client.sessionId);
       this.playerInputs.delete(client.sessionId);
+      this.ventSystem.clearPlayer(client.sessionId);
       this.votingSystem.removePlayer(client.sessionId);
       this.broadcast(MESSAGE_TYPES.PLAYER_LEFT, {
         sessionId: client.sessionId,
@@ -312,7 +334,7 @@ export class GameRoom extends Room<GameRoomState> {
     }
 
     // Movement is only allowed during normal gameplay.
-    if (this.state.phase !== GamePhase.Playing) {
+    if (this.state.phase !== GamePhase.Playing || this.ventSystem.isVenting(client.sessionId)) {
       return;
     }
 
@@ -435,6 +457,8 @@ export class GameRoom extends Room<GameRoomState> {
     this.meetingSystem.reset();
     this.votingSystem.reset();
     this.victorySystem.reset();
+    this.ventSystem.clearAll();
+    this.clearAllPlayerInputs();
 
     // Assign roles privately
     const roleAssignments = this.roleAssignmentSystem.assignRoles();
@@ -557,6 +581,9 @@ export class GameRoom extends Room<GameRoomState> {
 
     // If meeting was successfully started, notify all clients
     if (result.success) {
+      this.ventSystem.clearAll();
+      this.clearAllPlayerInputs();
+
       // Get meeting positions for all living players
       const meetingPositions: Array<{ sessionId: string; x: number; y: number }> = [];
       this.state.players.forEach((player, sessionId) => {
@@ -594,6 +621,43 @@ export class GameRoom extends Room<GameRoomState> {
     this.broadcast(MESSAGE_TYPES.MEETING_ENDED, {});
     this.broadcast(MESSAGE_TYPES.VOTING_STARTED, startedMessage);
     this.broadcastMeetingState();
+  }
+
+  private handleVentEnter(client: Client, message: VentEnterMessage) {
+    if (!message || typeof message.nodeId !== "string") {
+      this.sendVentState(client, { success: false, reason: "Vent node must be a string" });
+      return;
+    }
+
+    const result = this.ventSystem.enter(client.sessionId, message.nodeId);
+    if (result.success) this.playerInputs.delete(client.sessionId);
+    this.sendVentState(client, result);
+  }
+
+  private handleVentTravel(client: Client, message: VentTravelMessage) {
+    if (!message || typeof message.destinationNodeId !== "string") {
+      this.sendVentState(client, { success: false, reason: "Vent destination must be a string" });
+      return;
+    }
+
+    this.sendVentState(client, this.ventSystem.travel(client.sessionId, message.destinationNodeId));
+  }
+
+  private handleVentExit(client: Client) {
+    const result = this.ventSystem.exit(client.sessionId);
+    this.playerInputs.delete(client.sessionId);
+    this.sendVentState(client, result);
+  }
+
+  private sendVentState(client: Client, result: { success: boolean; reason?: string }) {
+    const message: VentStateMessage = {
+      success: result.success,
+      reason: result.reason,
+      isVenting: this.ventSystem.isVenting(client.sessionId),
+      currentNodeId: this.ventSystem.getCurrentNodeId(client.sessionId),
+      connectedNodeIds: this.ventSystem.getConnectedNodeIds(client.sessionId),
+    };
+    client.send(MESSAGE_TYPES.VENT_STATE, message);
   }
 
   private handleVote(client: Client, message: VoteMessage) {

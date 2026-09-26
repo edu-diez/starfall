@@ -65,6 +65,10 @@ describe("Shared package", () => {
     expect(MESSAGE_TYPES.ERROR).toBe("error");
     expect(MESSAGE_TYPES.VOTE).toBe("vote");
     expect(MESSAGE_TYPES.VOTING_RESULTS).toBe("votingResults");
+    expect(MESSAGE_TYPES.VENT_ENTER).toBe("ventEnter");
+    expect(MESSAGE_TYPES.VENT_TRAVEL).toBe("ventTravel");
+    expect(MESSAGE_TYPES.VENT_EXIT).toBe("ventExit");
+    expect(MESSAGE_TYPES.VENT_STATE).toBe("ventState");
   });
 
   it("MoveMessage type works correctly", () => {

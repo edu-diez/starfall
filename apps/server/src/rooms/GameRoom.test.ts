@@ -332,9 +332,72 @@ describe("GameRoom", () => {
 
       expect(mockRoom.playerInputs.has("client-1")).toBe(false);
     });
+
+    it("blocks cached and new movement while a player is venting", () => {
+      const client = mockClient("client-1");
+      const player = mockRoom.state.players.get("client-1")!;
+      player.x = 960;
+      player.y = 150;
+      mockRoom.roleAssignmentSystem["roleMap"].set("client-1", PlayerRole.Killer);
+      mockRoom.handleMove(client, { direction: { x: 1, y: 0 }, timestamp: Date.now() });
+      mockRoom.handleVentEnter(client, { nodeId: "vent-bridge" });
+
+      expect(mockRoom.ventSystem.isVenting("client-1")).toBe(true);
+      expect(mockRoom.playerInputs.has("client-1")).toBe(false);
+      mockRoom.handleMove(client, { direction: { x: 1, y: 0 }, timestamp: Date.now() });
+      expect(mockRoom.playerInputs.has("client-1")).toBe(false);
+
+      const positionBeforeTick = { x: player.x, y: player.y };
+      mockRoom.lastTickTime = Date.now() - 1000;
+      mockRoom.tick();
+      expect(player).toMatchObject(positionBeforeTick);
+    });
   });
 
   // Lobby and Color System tests
+  describe("Vent System", () => {
+    beforeEach(() => {
+      mockRoom.onCreate({});
+      const client = mockClient("client-1");
+      mockRoom.handleJoin(client, { name: "Killer" });
+      mockRoom.state.phase = GamePhase.Playing;
+      const player = mockRoom.state.players.get("client-1")!;
+      player.x = 960;
+      player.y = 150;
+      mockRoom.roleAssignmentSystem["roleMap"].set("client-1", PlayerRole.Killer);
+    });
+
+    it("rejects malformed vent payloads before mutation", () => {
+      const client = mockClient("client-1");
+      mockRoom.handleVentEnter(client, {});
+
+      expect(mockRoom.ventSystem.isVenting("client-1")).toBe(false);
+      expect(client.send).toHaveBeenCalledWith(MESSAGE_TYPES.VENT_STATE, expect.objectContaining({
+        success: false,
+        reason: "Vent node must be a string",
+      }));
+    });
+
+    it("cleans vent state when a meeting begins", () => {
+      const client = mockClient("client-1");
+      mockRoom.handleVentEnter(client, { nodeId: "vent-bridge" });
+      expect(mockRoom.ventSystem.isVenting("client-1")).toBe(true);
+
+      mockRoom.handleCallMeeting(client, {});
+
+      expect(mockRoom.ventSystem.isVenting("client-1")).toBe(false);
+      expect(mockRoom.state.phase).toBe(GamePhase.Meeting);
+    });
+
+    it("cleans vent state when a player leaves", () => {
+      const client = mockClient("client-1");
+      mockRoom.handleVentEnter(client, { nodeId: "vent-bridge" });
+      mockRoom.handleLeave(client);
+
+      expect(mockRoom.ventSystem.isVenting("client-1")).toBe(false);
+    });
+  });
+
   describe("Lobby System", () => {
     beforeEach(() => {
       mockRoom.onCreate({});
