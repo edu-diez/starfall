@@ -1559,8 +1559,7 @@ M9  Mobile controls and responsive UI                  COMPLETE
 M10 Accounts and persistence                           COMPLETE
 M11 Reconnection and resilience                        COMPLETE
 M12 Networking polish and gameplay presentation        COMPLETE
-M13 Full-match hardening and release candidate         IN PROGRESS
-```
+M13 Full-match hardening and release candidate         COMPLETE
 
 Allowed status values:
 
