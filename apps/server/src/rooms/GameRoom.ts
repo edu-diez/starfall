@@ -51,10 +51,32 @@ import {
   LocalAccountService,
 } from "../services/AccountService";
 import { JsonFilePersistenceService } from "../services/PersistenceService";
+import {
+  isBoundedIdentifier,
+  isBoundedMessage,
+  isRecord,
+  MessageRateLimiter,
+} from "../security/MessageSecurity";
 
 interface AuthenticatedClient extends Client {
   auth?: AccountProfile;
 }
+
+const MESSAGE_RATE_LIMITS: Record<string, { maxEvents: number; windowMs: number }> = {
+  [MESSAGE_TYPES.MOVE]: { maxEvents: 75, windowMs: 1000 },
+  [MESSAGE_TYPES.JOIN]: { maxEvents: 2, windowMs: 10_000 },
+  [MESSAGE_TYPES.LEAVE]: { maxEvents: 2, windowMs: 10_000 },
+  [MESSAGE_TYPES.COLOR_CHANGE]: { maxEvents: 10, windowMs: 1000 },
+  [MESSAGE_TYPES.READY]: { maxEvents: 10, windowMs: 1000 },
+  [MESSAGE_TYPES.MATCH_START]: { maxEvents: 2, windowMs: 1000 },
+  [MESSAGE_TYPES.KILL]: { maxEvents: 5, windowMs: 1000 },
+  [MESSAGE_TYPES.CALL_MEETING]: { maxEvents: 3, windowMs: 1000 },
+  [MESSAGE_TYPES.VOTE]: { maxEvents: 10, windowMs: 1000 },
+  [MESSAGE_TYPES.VENT_ENTER]: { maxEvents: 5, windowMs: 1000 },
+  [MESSAGE_TYPES.VENT_TRAVEL]: { maxEvents: 10, windowMs: 1000 },
+  [MESSAGE_TYPES.VENT_EXIT]: { maxEvents: 5, windowMs: 1000 },
+};
+const MAX_SIMULATION_DELTA_SECONDS = 0.1;
 
 export class GameRoom extends Room<{ state: GameRoomState }> {
   private static accountService: AccountService = new LocalAccountService(
@@ -78,6 +100,7 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
     string,
     { direction: Vec2; timestamp: number }
   >();
+  private readonly messageRateLimiter = new MessageRateLimiter();
 
   /** Session IDs currently held by Colyseus for reconnecting clients. */
   private reconnectingSessionIds = new Set<string>();
@@ -157,8 +180,8 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
       },
     );
 
-    this.onMessage(MESSAGE_TYPES.MATCH_START, (client: Client) => {
-      this.handleMatchStart(client);
+    this.onMessage(MESSAGE_TYPES.MATCH_START, (client: Client, message: unknown) => {
+      this.handleMatchStart(client, message);
     });
 
     this.onMessage(
@@ -194,8 +217,8 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
         this.handleVentTravel(client, message);
       },
     );
-    this.onMessage(MESSAGE_TYPES.VENT_EXIT, (client: Client) => {
-      this.handleVentExit(client);
+    this.onMessage(MESSAGE_TYPES.VENT_EXIT, (client: Client, message: unknown) => {
+      this.handleVentExit(client, message);
     });
 
     // Start the fixed-rate simulation loop
@@ -284,7 +307,10 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
 
   private tick() {
     const now = Date.now();
-    const deltaTime = (now - this.lastTickTime) / 1000; // Convert to seconds
+    const deltaTime = Math.min(
+      Math.max(0, (now - this.lastTickTime) / 1000),
+      MAX_SIMULATION_DELTA_SECONDS,
+    );
     this.lastTickTime = now;
 
     // Update meeting system (checks for discussion timeout)
@@ -370,6 +396,7 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
   }
 
   private handleJoin(client: Client, _message: unknown) {
+    if (!this.acceptsMessage(client, MESSAGE_TYPES.JOIN, _message)) return;
     const account = (client as AuthenticatedClient).auth;
     if (!account) {
       client.send(MESSAGE_TYPES.ERROR, {
@@ -454,6 +481,7 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
 
     this.reconnectingSessionIds.delete(sessionId);
     this.playerInputs.delete(sessionId);
+    this.messageRateLimiter.clearPlayer(sessionId);
     this.ventSystem.clearPlayer(sessionId);
     this.votingSystem.removePlayer(sessionId);
     this.meetingSystem.clearPlayer(sessionId);
@@ -479,6 +507,17 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
   }
 
   private handleMove(client: Client, message: MoveMessage) {
+    if (
+      !this.acceptsMessage(client, MESSAGE_TYPES.MOVE, message) ||
+      !isRecord(message) ||
+      !isRecord(message.direction) ||
+      typeof message.direction.x !== "number" ||
+      typeof message.direction.y !== "number" ||
+      typeof message.timestamp !== "number"
+    ) {
+      return;
+    }
+
     // Validate the player exists and is alive
     const player = this.state.players.get(client.sessionId);
     if (!player || !player.isConnected || player.state !== PlayerState.Alive) {
@@ -523,6 +562,15 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
   }
 
   private handleColorChange(client: Client, message: ColorChangeMessage) {
+    if (
+      !this.acceptsMessage(client, MESSAGE_TYPES.COLOR_CHANGE, message) ||
+      !isRecord(message) ||
+      typeof message.color !== "string"
+    ) {
+      client.send(MESSAGE_TYPES.ERROR, { message: "Invalid color request" });
+      return;
+    }
+
     // Only allow color changes in lobby phase
     if (!this.lobbySystem.isInLobby()) {
       client.send(MESSAGE_TYPES.ERROR, {
@@ -566,6 +614,15 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
   }
 
   private handleReady(client: Client, message: ReadyMessage) {
+    if (
+      !this.acceptsMessage(client, MESSAGE_TYPES.READY, message) ||
+      !isRecord(message) ||
+      typeof message.ready !== "boolean"
+    ) {
+      client.send(MESSAGE_TYPES.ERROR, { message: "Invalid ready request" });
+      return;
+    }
+
     // Only allow ready changes in lobby phase
     if (!this.lobbySystem.isInLobby()) {
       client.send(MESSAGE_TYPES.ERROR, {
@@ -592,7 +649,15 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
     }
   }
 
-  private handleMatchStart(client: Client) {
+  private handleMatchStart(client: Client, message: unknown) {
+    if (
+      !this.acceptsMessage(client, MESSAGE_TYPES.MATCH_START, message) ||
+      !isRecord(message) ||
+      Object.keys(message).length > 0
+    ) {
+      client.send(MESSAGE_TYPES.ERROR, { message: "Invalid match start request" });
+      return;
+    }
     // Only the host (first player) can start the match, or any player if we allow it
     // For MVP, allow any player to start if conditions are met
     if (!this.matchLifecycleSystem.canStartMatch()) {
@@ -615,6 +680,7 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
     this.meetingSystem.reset();
     this.votingSystem.reset();
     this.victorySystem.reset();
+    this.killSystem.clearAllCooldowns();
     this.ventSystem.clearAll();
     this.clearAllPlayerInputs();
 
@@ -662,6 +728,17 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
   }
 
   private handleKill(client: Client, message: KillMessage) {
+    if (
+      !this.acceptsMessage(client, MESSAGE_TYPES.KILL, message) ||
+      !isRecord(message) ||
+      !isBoundedIdentifier(message.targetSessionId)
+    ) {
+      client.send(MESSAGE_TYPES.KILL_RESULT, {
+        success: false,
+        reason: "Invalid kill request",
+      } as KillResultMessage);
+      return;
+    }
     const killerSessionId = client.sessionId;
 
     // Validate the killer exists and is alive
@@ -721,6 +798,7 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
   }
 
   private handleCallMeeting(client: Client, message: CallMeetingMessage) {
+    if (!this.acceptsMessage(client, MESSAGE_TYPES.CALL_MEETING, message)) return;
     const callerSessionId = client.sessionId;
 
     // Validate the caller exists and is alive
@@ -798,7 +876,11 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
   }
 
   private handleVentEnter(client: Client, message: VentEnterMessage) {
-    if (!message || typeof message.nodeId !== "string") {
+    if (
+      !this.acceptsMessage(client, MESSAGE_TYPES.VENT_ENTER, message) ||
+      !isRecord(message) ||
+      !isBoundedIdentifier(message.nodeId)
+    ) {
       this.sendVentState(client, {
         success: false,
         reason: "Vent node must be a string",
@@ -812,7 +894,11 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
   }
 
   private handleVentTravel(client: Client, message: VentTravelMessage) {
-    if (!message || typeof message.destinationNodeId !== "string") {
+    if (
+      !this.acceptsMessage(client, MESSAGE_TYPES.VENT_TRAVEL, message) ||
+      !isRecord(message) ||
+      !isBoundedIdentifier(message.destinationNodeId)
+    ) {
       this.sendVentState(client, {
         success: false,
         reason: "Vent destination must be a string",
@@ -826,7 +912,15 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
     );
   }
 
-  private handleVentExit(client: Client) {
+  private handleVentExit(client: Client, message: unknown) {
+    if (
+      !this.acceptsMessage(client, MESSAGE_TYPES.VENT_EXIT, message) ||
+      !isRecord(message) ||
+      Object.keys(message).length > 0
+    ) {
+      this.sendVentState(client, { success: false, reason: "Invalid vent exit request" });
+      return;
+    }
     const result = this.ventSystem.exit(client.sessionId);
     this.playerInputs.delete(client.sessionId);
     this.sendVentState(client, result);
@@ -847,8 +941,21 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
   }
 
   private handleVote(client: Client, message: VoteMessage) {
-    const targetSessionId = message?.targetSessionId;
-    if (targetSessionId !== null && typeof targetSessionId !== "string") {
+    if (
+      !this.acceptsMessage(client, MESSAGE_TYPES.VOTE, message) ||
+      !isRecord(message)
+    ) {
+      client.send(MESSAGE_TYPES.VOTE_SUBMITTED, {
+        success: false,
+        reason: "Invalid vote request",
+      } as VoteSubmittedMessage);
+      return;
+    }
+    const targetSessionId = message.targetSessionId;
+    if (
+      targetSessionId !== null &&
+      !isBoundedIdentifier(targetSessionId)
+    ) {
       client.send(MESSAGE_TYPES.VOTE_SUBMITTED, {
         success: false,
         reason: "Vote target must be a player or abstention",
@@ -908,6 +1015,20 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
         targetClient.send(MESSAGE_TYPES.MEETING_STATE, meetingState);
       }
     });
+  }
+
+  /** Validate basic message size and server-private rate limits before routing. */
+  private acceptsMessage(client: Client, messageType: string, message: unknown): boolean {
+    if (!isBoundedMessage(message)) {
+      client.send(MESSAGE_TYPES.ERROR, { message: "Message is too large or invalid" });
+      return false;
+    }
+    const limit = MESSAGE_RATE_LIMITS[messageType];
+    if (!limit || this.messageRateLimiter.allows(client.sessionId, messageType, limit)) {
+      return true;
+    }
+    client.send(MESSAGE_TYPES.ERROR, { message: "Message rate limit exceeded" });
+    return false;
   }
 
   /** Restore only information that the reconnecting player is entitled to see. */

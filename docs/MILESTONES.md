@@ -1333,7 +1333,7 @@ A player disconnects during a match, reconnects within the allowed window, regai
 
 ### Implementation decisions
 
-- Status: In Progress
+- Status: Accepted
 - Date: 2026-09-26
 - Milestone: M12
 - Remote-player positions are interpolated from client-local snapshots with a 100 ms presentation delay; the local player's replicated position remains unmodified.
@@ -1399,6 +1399,15 @@ Confirm movement remains understandable and the server remains authoritative.
 ---
 
 # Milestone 13: Full-Match Hardening and Release Candidate
+
+### Implementation decisions
+
+- Status: In Progress
+- Date: 2026-09-26
+- Milestone: M13
+- Client commands are bounded to 1 KiB, validated before field access, and rate-limited per session and message type. A rejected command cannot mutate public or private match state.
+- Production client builds derive WebSocket protocol and host from the page origin unless `VITE_SERVER_URL` is configured. Development-only diagnostics are excluded from production behavior.
+- Controlled playtests use one server process with HTTPS termination, operator-restricted diagnostics, and a backed-up local account store. Browser/device and capacity results are recorded using the playtest template.
 
 ## Goal
 
@@ -1550,7 +1559,7 @@ M9  Mobile controls and responsive UI                  COMPLETE
 M10 Accounts and persistence                           COMPLETE
 M11 Reconnection and resilience                        COMPLETE
 M12 Networking polish and gameplay presentation        COMPLETE
-M13 Full-match hardening and release candidate         NOT STARTED
+M13 Full-match hardening and release candidate         IN PROGRESS
 ```
 
 Allowed status values:

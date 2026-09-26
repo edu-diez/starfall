@@ -56,6 +56,15 @@ interface PlayerData {
   isConnected: boolean;
 }
 
+function getServerUrl(): string {
+  const configuredUrl = import.meta.env.VITE_SERVER_URL?.trim();
+  if (configuredUrl) return configuredUrl;
+
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const port = import.meta.env.DEV ? ":2567" : window.location.port ? `:${window.location.port}` : "";
+  return `${protocol}//${window.location.hostname}${port}`;
+}
+
 interface GameRoomState {
   players: Map<string, PlayerData>;
   phase: GamePhase;
@@ -127,7 +136,7 @@ class GameClient {
   private readonly INPUT_SEND_RATE = 60; // Hz - match server tick rate
 
   constructor() {
-    this.client = new Client("ws://localhost:2567");
+    this.client = new Client(getServerUrl());
     this.canvas = document.getElementById("game-canvas") as HTMLCanvasElement;
     this.ctx = this.canvas.getContext("2d")!;
     this.connectionStatus = document.getElementById("connection-status")!;
@@ -172,13 +181,14 @@ class GameClient {
     this.desktopInput.attach();
     this.createTouchControls();
 
-    // Debug mode toggle (F3 key)
-    window.addEventListener("keydown", (e) => {
-      if (e.key === "F3") {
-        this.debugMode = !this.debugMode;
-        console.log(`Debug mode: ${this.debugMode ? "ON" : "OFF"}`);
-      }
-    });
+    if (import.meta.env.DEV) {
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "F3") {
+          this.debugMode = !this.debugMode;
+          console.log(`Debug mode: ${this.debugMode ? "ON" : "OFF"}`);
+        }
+      });
+    }
   }
 
   private recordRemoteSnapshots(state: GameRoomState) {
@@ -1138,18 +1148,36 @@ class GameClient {
   }
 
   private renderPlayersList(players: Map<string, PlayerData>) {
-    this.playersContainer.innerHTML = "";
+    this.playersContainer.replaceChildren();
     let count = 0;
     players.forEach((player, sessionId) => {
       count++;
       const div = document.createElement("div");
       div.className = "player-item";
-      div.innerHTML = `
-        <div class="player-color" style="background: ${player.color}"></div>
-        <span class="player-name">${player.name}</span>
-        ${sessionId === this.mySessionId ? '<span class="player-you">You</span>' : ""}
-        ${player.ready ? '<span class="player-ready" style="font-size: 12px; color: #10b981; background: rgba(16, 185, 129, 0.2); padding: 2px 6px; border-radius: 4px;">Ready</span>' : ""}
-      `;
+
+      const color = document.createElement("div");
+      color.className = "player-color";
+      color.style.background = player.color;
+      div.appendChild(color);
+
+      const name = document.createElement("span");
+      name.className = "player-name";
+      name.textContent = player.name;
+      div.appendChild(name);
+
+      if (sessionId === this.mySessionId) {
+        const you = document.createElement("span");
+        you.className = "player-you";
+        you.textContent = "You";
+        div.appendChild(you);
+      }
+      if (player.ready) {
+        const ready = document.createElement("span");
+        ready.className = "player-ready";
+        ready.textContent = "Ready";
+        ready.style.cssText = "font-size: 12px; color: #10b981; background: rgba(16, 185, 129, 0.2); padding: 2px 6px; border-radius: 4px;";
+        div.appendChild(ready);
+      }
       this.playersContainer.appendChild(div);
     });
     const playersListHeader = this.playersList.querySelector("h3");

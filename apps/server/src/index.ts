@@ -14,7 +14,12 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const PORT = Number(process.env.PORT) || 2567;
+const configuredPort = Number(process.env.PORT ?? 2567);
+if (!Number.isInteger(configuredPort) || configuredPort < 1 || configuredPort > 65535) {
+  throw new Error("PORT must be an integer between 1 and 65535");
+}
+const PORT = configuredPort;
+const isProduction = process.env.NODE_ENV === "production";
 const accountService = new LocalAccountService(
   new JsonFilePersistenceService(
     process.env.ACCOUNT_STORE_PATH || ".starfall/accounts.json",
@@ -23,7 +28,8 @@ const accountService = new LocalAccountService(
 GameRoom.configureAccountService(accountService);
 const app = express();
 
-app.use(express.json());
+app.disable("x-powered-by");
+app.use(express.json({ limit: "4kb" }));
 
 app.get("/api/account", async (request, response, next) => {
   try {
@@ -34,7 +40,7 @@ app.get("/api/account", async (request, response, next) => {
       response.cookie("starfall_account", result.credential, {
         httpOnly: true,
         sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
+        secure: isProduction,
         path: "/",
       });
     }
@@ -78,7 +84,21 @@ const gameServer = new Server({
 
 gameServer.define("game", GameRoom);
 
-app.use("/colyseus", monitor());
+if (!isProduction || process.env.ENABLE_COLYSEUS_MONITOR === "true") {
+  app.use("/colyseus", monitor());
+}
+
+app.use(
+  (
+    error: unknown,
+    _request: express.Request,
+    response: express.Response,
+    _next: express.NextFunction,
+  ) => {
+    console.error("Request failed", error instanceof Error ? error.message : "unknown error");
+    response.status(500).json({ message: "Internal server error" });
+  },
+);
 
 gameServer.listen(PORT);
 console.log(`Server listening on ws://localhost:${PORT}`);

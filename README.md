@@ -4,7 +4,7 @@ A server-authoritative, real-time multiplayer social-deduction game for desktop 
 
 Starfall is an original TypeScript project built around explicit public/private state boundaries: clients submit intentions, while the server validates every gameplay outcome.
 
-> **Project status:** Milestones M0–M11 are complete. Core gameplay, accounts, and reconnect support are implemented. Networking polish and release hardening remain planned work; see [`docs/MILESTONES.md`](docs/MILESTONES.md).
+> **Project status:** Milestones M0–M13 are complete; see [`docs/MILESTONES.md`](docs/MILESTONES.md).
 
 ## Features
 
@@ -114,8 +114,11 @@ Copy [`apps/server/.env.example`](apps/server/.env.example) to `apps/server/.env
 | `PORT` | `2567` | HTTP, WebSocket, and Colyseus server port |
 | `NODE_ENV` | `development` | Enables production cookie security behavior when set to `production` |
 | `ACCOUNT_STORE_PATH` | `.starfall/accounts.json` | Path to local JSON account persistence data |
+| `ENABLE_COLYSEUS_MONITOR` | `false` | Enables the Colyseus monitor; never expose it publicly |
 
 The account store is designed for a **single local server process**. It is intentionally not production database infrastructure. It is written atomically but should be replaced behind the `PersistenceService` boundary before a production deployment.
+
+For a remotely hosted client, the browser derives its WebSocket origin from the page URL. If the game server uses a different origin, build the client with `VITE_SERVER_URL=wss://your-game-host`.
 
 ## Project structure
 
@@ -198,5 +201,5 @@ For manual multiplayer testing, start the development environment, join from at 
 
 - Local JSON persistence is single-process development infrastructure, not a production storage solution.
 - The default client WebSocket endpoint is localhost-oriented.
-- Remote interpolation/prediction, presentation polish, performance/load testing, and release hardening are planned future milestones.
+- Placeholder map presentation and cross-browser capacity testing require controlled playtest sign-off.
 - Public matchmaking, voice/text chat, progression, tasks, sabotage, and production deployment are out of scope for the current implementation.

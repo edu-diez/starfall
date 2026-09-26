@@ -244,6 +244,14 @@ describe("GameRoom", () => {
       expect(storedInput?.direction.y).toBe(0);
     });
 
+    it("rejects malformed movement payloads without throwing or mutating input", () => {
+      const client = mockClient("client-1");
+
+      expect(() => mockRoom.handleMove(client, null)).not.toThrow();
+      expect(() => mockRoom.handleMove(client, { direction: null })).not.toThrow();
+      expect(mockRoom.playerInputs.has("client-1")).toBe(false);
+    });
+
     it("rejects non-finite input", () => {
       const client = mockClient("client-1");
 
@@ -420,8 +428,8 @@ describe("GameRoom", () => {
       mockRoom.lastTickTime = Date.now() - 1000;
       mockRoom.tick();
 
-      // Player should move exactly PLAYER_SPEED pixels in 1 second
-      const expectedX = 850 + GAME_CONFIG.PLAYER_SPEED;
+      // A stalled event loop is clamped to protect simulation fairness.
+      const expectedX = 850 + GAME_CONFIG.PLAYER_SPEED * 0.1;
       expect(player?.x).toBeCloseTo(expectedX, 0);
     });
 
@@ -614,6 +622,37 @@ describe("GameRoom", () => {
     });
   });
 
+  describe("Command hardening", () => {
+    beforeEach(() => {
+      mockRoom.onCreate({});
+      mockRoom.handleJoin(mockClient("client-1"), {});
+    });
+
+    it("rejects malformed discrete command payloads without mutating state", () => {
+      const client = mockClient("client-1");
+      const originalColor = mockRoom.state.players.get("client-1")!.color;
+
+      expect(() => mockRoom.handleColorChange(client, null)).not.toThrow();
+      expect(() => mockRoom.handleReady(client, { ready: "yes" })).not.toThrow();
+      expect(() => mockRoom.handleKill(client, { targetSessionId: null })).not.toThrow();
+      expect(() => mockRoom.handleVote(client, null)).not.toThrow();
+
+      expect(mockRoom.state.players.get("client-1")!.color).toBe(originalColor);
+      expect(mockRoom.state.players.get("client-1")!.ready).toBe(false);
+    });
+
+    it("clears private kill cooldowns before a fresh match", () => {
+      const clients = ["client-1", "client-2", "client-3", "client-4"].map(mockClient);
+      clients.slice(1).forEach((client) => mockRoom.handleJoin(client, {}));
+      clients.forEach((client) => mockRoom.handleReady(client, { ready: true }));
+      mockRoom.killSystem["killCooldownUntil"].set("client-1", Date.now() + 30_000);
+
+      mockRoom.handleMatchStart(clients[0]!, {});
+
+      expect(mockRoom.killSystem.getCooldownRemaining("client-1")).toBe(0);
+    });
+  });
+
   describe("Color System", () => {
     beforeEach(() => {
       mockRoom.onCreate({});
@@ -782,6 +821,8 @@ describe("GameRoomState", () => {
     expect(player.x).toBe(960);
     expect(player.y).toBe(540);
     expect(player.state).toBe(PlayerState.Alive);
+    expect(Object.keys(player)).not.toContain("meetingsUsed");
+    expect(Object.keys(player)).not.toContain("lastInputTimestamp");
     // Role is no longer in public state (private role assignment)
   });
 });
