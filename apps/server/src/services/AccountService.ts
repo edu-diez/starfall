@@ -22,6 +22,7 @@ export interface ResolvedAccount {
 
 export interface AccountService {
   resolveAccount(credential: string | undefined): Promise<ResolvedAccount>;
+  getProfile(accountId: string): Promise<AccountProfile>;
   updateProfile(accountId: string, update: unknown): Promise<AccountProfile>;
 }
 
@@ -63,6 +64,14 @@ export class LocalAccountService implements AccountService {
       account: toProfile(newAccount),
       credential: `${accountId}.${secret}`,
     };
+  }
+
+  async getProfile(accountId: string): Promise<AccountProfile> {
+    const account = await this.persistence.getAccount(accountId);
+    if (!account) {
+      throw new AccountNotFoundError();
+    }
+    return toProfile(account);
   }
 
   async updateProfile(

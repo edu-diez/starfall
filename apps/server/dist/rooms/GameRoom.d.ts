@@ -38,6 +38,7 @@ export declare class GameRoom extends Room<{
     private stopSimulationLoop;
     private tick;
     private handleJoin;
+    private refreshPlayerProfile;
     private handleLeave;
     /** Permanently remove a session only after consented leave or grace expiry. */
     private handlePermanentLeave;

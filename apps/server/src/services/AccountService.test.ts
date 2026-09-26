@@ -58,6 +58,9 @@ describe("LocalAccountService", () => {
     expect(
       (await service.resolveAccount(created.credential ?? undefined)).account,
     ).toEqual(updated);
+    await expect(service.getProfile(created.account.id)).resolves.toEqual(
+      updated,
+    );
   });
 
   it("rejects invalid display names", async () => {

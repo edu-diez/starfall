@@ -39,6 +39,7 @@ async function createServiceAsync() {
             preferences: { soundEnabled: false },
         });
         (0, vitest_1.expect)((await service.resolveAccount(created.credential ?? undefined)).account).toEqual(updated);
+        await (0, vitest_1.expect)(service.getProfile(created.account.id)).resolves.toEqual(updated);
     });
     (0, vitest_1.it)("rejects invalid display names", async () => {
         const service = await createServiceAsync();

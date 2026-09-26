@@ -62,7 +62,10 @@ interface AuthenticatedClient extends Client {
   auth?: AccountProfile;
 }
 
-const MESSAGE_RATE_LIMITS: Record<string, { maxEvents: number; windowMs: number }> = {
+const MESSAGE_RATE_LIMITS: Record<
+  string,
+  { maxEvents: number; windowMs: number }
+> = {
   [MESSAGE_TYPES.MOVE]: { maxEvents: 75, windowMs: 1000 },
   [MESSAGE_TYPES.JOIN]: { maxEvents: 2, windowMs: 10_000 },
   [MESSAGE_TYPES.LEAVE]: { maxEvents: 2, windowMs: 10_000 },
@@ -180,9 +183,12 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
       },
     );
 
-    this.onMessage(MESSAGE_TYPES.MATCH_START, (client: Client, message: unknown) => {
-      this.handleMatchStart(client, message);
-    });
+    this.onMessage(
+      MESSAGE_TYPES.MATCH_START,
+      (client: Client, message: unknown) => {
+        this.handleMatchStart(client, message);
+      },
+    );
 
     this.onMessage(
       MESSAGE_TYPES.KILL,
@@ -217,9 +223,12 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
         this.handleVentTravel(client, message);
       },
     );
-    this.onMessage(MESSAGE_TYPES.VENT_EXIT, (client: Client, message: unknown) => {
-      this.handleVentExit(client, message);
-    });
+    this.onMessage(
+      MESSAGE_TYPES.VENT_EXIT,
+      (client: Client, message: unknown) => {
+        this.handleVentExit(client, message);
+      },
+    );
 
     // Start the fixed-rate simulation loop
     this.startSimulationLoop();
@@ -468,6 +477,35 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
 
     // Broadcast updated lobby state to all
     this.broadcast(MESSAGE_TYPES.LOBBY_STATE, this.lobbySystem.getLobbyState());
+    void this.refreshPlayerProfile(client.sessionId, account.id);
+  }
+
+  private async refreshPlayerProfile(
+    sessionId: string,
+    accountId: string,
+  ): Promise<void> {
+    try {
+      const profile = await GameRoom.accountService.getProfile(accountId);
+      const player = this.state.players.get(sessionId);
+      if (
+        !player ||
+        player.accountId !== accountId ||
+        player.name === profile.displayName
+      ) {
+        return;
+      }
+
+      player.name = profile.displayName;
+      this.broadcast(
+        MESSAGE_TYPES.LOBBY_STATE,
+        this.lobbySystem.getLobbyState(),
+      );
+    } catch (error) {
+      console.error(
+        "Unable to refresh player profile",
+        error instanceof Error ? error.message : "unknown error",
+      );
+    }
   }
 
   private handleLeave(client: Client) {
@@ -655,7 +693,9 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
       !isRecord(message) ||
       Object.keys(message).length > 0
     ) {
-      client.send(MESSAGE_TYPES.ERROR, { message: "Invalid match start request" });
+      client.send(MESSAGE_TYPES.ERROR, {
+        message: "Invalid match start request",
+      });
       return;
     }
     // Only the host (first player) can start the match, or any player if we allow it
@@ -798,7 +838,8 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
   }
 
   private handleCallMeeting(client: Client, message: CallMeetingMessage) {
-    if (!this.acceptsMessage(client, MESSAGE_TYPES.CALL_MEETING, message)) return;
+    if (!this.acceptsMessage(client, MESSAGE_TYPES.CALL_MEETING, message))
+      return;
     const callerSessionId = client.sessionId;
 
     // Validate the caller exists and is alive
@@ -918,7 +959,10 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
       !isRecord(message) ||
       Object.keys(message).length > 0
     ) {
-      this.sendVentState(client, { success: false, reason: "Invalid vent exit request" });
+      this.sendVentState(client, {
+        success: false,
+        reason: "Invalid vent exit request",
+      });
       return;
     }
     const result = this.ventSystem.exit(client.sessionId);
@@ -952,10 +996,7 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
       return;
     }
     const targetSessionId = message.targetSessionId;
-    if (
-      targetSessionId !== null &&
-      !isBoundedIdentifier(targetSessionId)
-    ) {
+    if (targetSessionId !== null && !isBoundedIdentifier(targetSessionId)) {
       client.send(MESSAGE_TYPES.VOTE_SUBMITTED, {
         success: false,
         reason: "Vote target must be a player or abstention",
@@ -1018,16 +1059,27 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
   }
 
   /** Validate basic message size and server-private rate limits before routing. */
-  private acceptsMessage(client: Client, messageType: string, message: unknown): boolean {
+  private acceptsMessage(
+    client: Client,
+    messageType: string,
+    message: unknown,
+  ): boolean {
     if (!isBoundedMessage(message)) {
-      client.send(MESSAGE_TYPES.ERROR, { message: "Message is too large or invalid" });
+      client.send(MESSAGE_TYPES.ERROR, {
+        message: "Message is too large or invalid",
+      });
       return false;
     }
     const limit = MESSAGE_RATE_LIMITS[messageType];
-    if (!limit || this.messageRateLimiter.allows(client.sessionId, messageType, limit)) {
+    if (
+      !limit ||
+      this.messageRateLimiter.allows(client.sessionId, messageType, limit)
+    ) {
       return true;
     }
-    client.send(MESSAGE_TYPES.ERROR, { message: "Message rate limit exceeded" });
+    client.send(MESSAGE_TYPES.ERROR, {
+      message: "Message rate limit exceeded",
+    });
     return false;
   }
 

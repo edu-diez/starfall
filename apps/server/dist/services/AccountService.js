@@ -36,6 +36,13 @@ class LocalAccountService {
             credential: `${accountId}.${secret}`,
         };
     }
+    async getProfile(accountId) {
+        const account = await this.persistence.getAccount(accountId);
+        if (!account) {
+            throw new AccountNotFoundError();
+        }
+        return toProfile(account);
+    }
     async updateProfile(accountId, update) {
         const validation = (0, shared_1.validateAccountProfileUpdate)(update);
         if (!validation.ok) {

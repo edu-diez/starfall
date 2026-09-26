@@ -274,6 +274,21 @@ class GameRoom extends colyseus_1.Room {
         }, { except: client });
         // Broadcast updated lobby state to all
         this.broadcast(shared_1.MESSAGE_TYPES.LOBBY_STATE, this.lobbySystem.getLobbyState());
+        void this.refreshPlayerProfile(client.sessionId, account.id);
+    }
+    async refreshPlayerProfile(sessionId, accountId) {
+        try {
+            const profile = await GameRoom.accountService.getProfile(accountId);
+            const player = this.state.players.get(sessionId);
+            if (!player || player.accountId !== accountId || player.name === profile.displayName) {
+                return;
+            }
+            player.name = profile.displayName;
+            this.broadcast(shared_1.MESSAGE_TYPES.LOBBY_STATE, this.lobbySystem.getLobbyState());
+        }
+        catch (error) {
+            console.error("Unable to refresh player profile", error instanceof Error ? error.message : "unknown error");
+        }
     }
     handleLeave(client) {
         this.handlePermanentLeave(client.sessionId);
