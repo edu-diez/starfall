@@ -57,9 +57,9 @@ export declare class LobbySystem {
         canStart: boolean;
     };
     /**
-     * Handle player joining - assign color
+     * Handle an already-authorized account joining and assign a unique color.
      */
-    handlePlayerJoin(sessionId: string, name: string): string;
+    handlePlayerJoin(sessionId: string, accountId: string, displayName: string): string;
     /**
      * Handle player leaving - clean up
      */

@@ -21,8 +21,9 @@ class VictorySystem {
      * Returns true if the match has ended, false otherwise
      */
     evaluate() {
-        // Only evaluate during playing phase
-        if (this.state.phase !== shared_1.GamePhase.Playing) {
+        // Vote ejections are evaluated during result resolution; kills during play.
+        if (this.state.phase !== shared_1.GamePhase.Playing &&
+            this.state.phase !== shared_1.GamePhase.ResolvingVote) {
             return false;
         }
         const livingCounts = this.getLivingRoleCounts();

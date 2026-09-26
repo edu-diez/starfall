@@ -119,10 +119,10 @@ class LobbySystem {
         };
     }
     /**
-     * Handle player joining - assign color
+     * Handle an already-authorized account joining and assign a unique color.
      */
-    handlePlayerJoin(sessionId, name) {
-        const player = this.state.createPlayer(sessionId, name, "#FF0000"); // Temporary color
+    handlePlayerJoin(sessionId, accountId, displayName) {
+        const player = this.state.createPlayer(sessionId, accountId, displayName, "#FF0000");
         this.state.players.set(sessionId, player);
         // Assign an available color
         this.colorSystem.assignColor(sessionId);

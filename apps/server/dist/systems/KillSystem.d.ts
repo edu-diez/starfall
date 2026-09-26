@@ -21,8 +21,9 @@ export declare class KillSystem {
     private state;
     private roleAssignmentSystem;
     private clock;
+    private isVenting;
     private killCooldownUntil;
-    constructor(state: GameRoomState, roleAssignmentSystem: RoleAssignmentSystem, clock?: Clock);
+    constructor(state: GameRoomState, roleAssignmentSystem: RoleAssignmentSystem, clock?: Clock, isVenting?: (sessionId: string) => boolean);
     /**
      * Attempt to perform a kill
      * Returns result with success status and optional error reason

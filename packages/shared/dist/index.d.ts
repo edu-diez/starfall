@@ -41,6 +41,30 @@ export declare const GAME_CONFIG: {
 };
 export declare const COLORS: readonly ["#FF0000", "#0000FF", "#00FF00", "#FFD700", "#FF69B4", "#FFA500", "#800080", "#00FFFF", "#FFFFFF", "#8B4513", "#FF4500", "#32CD32", "#1E90FF", "#FF1493", "#FF8C00", "#9932CC", "#00CED1", "#ADFF2F", "#FF6347", "#40E0D0", "#DA70D6"];
 export type Color = (typeof COLORS)[number];
+export declare const DISPLAY_NAME_MIN_LENGTH = 1;
+export declare const DISPLAY_NAME_MAX_LENGTH = 24;
+export interface AccountPreferences {
+    soundEnabled: boolean;
+}
+export interface AccountProfile {
+    /** Stable, safe-to-display account identifier. Never use this as a credential. */
+    id: string;
+    displayName: string;
+    preferences: AccountPreferences;
+}
+export interface AccountProfileUpdate {
+    displayName?: string;
+    preferences?: Partial<AccountPreferences>;
+}
+export declare const DEFAULT_ACCOUNT_PREFERENCES: AccountPreferences;
+export type AccountProfileValidation = {
+    ok: true;
+    value: AccountProfileUpdate;
+} | {
+    ok: false;
+    message: string;
+};
+export declare function validateAccountProfileUpdate(value: unknown): AccountProfileValidation;
 export declare const MESSAGE_TYPES: {
     readonly JOIN: "join";
     readonly LEAVE: "leave";
@@ -70,20 +94,25 @@ export declare const MESSAGE_TYPES: {
     readonly VENT_TRAVEL: "ventTravel";
     readonly VENT_EXIT: "ventExit";
     readonly VENT_STATE: "ventState";
+    readonly ACCOUNT_PROFILE: "accountProfile";
 };
 export type MessageType = (typeof MESSAGE_TYPES)[keyof typeof MESSAGE_TYPES];
 export interface MoveMessage {
     direction: Vec2;
     timestamp: number;
 }
+/** Joins the authenticated account associated with the room connection. */
 export interface JoinMessage {
-    name?: string;
 }
 export interface WelcomeMessage {
     sessionId: string;
     playerId: string;
+    accountId: string;
     color: Color;
     phase: GamePhase;
+}
+export interface AccountProfileMessage {
+    profile: AccountProfile;
 }
 export interface PlayerJoinedMessage {
     sessionId: string;

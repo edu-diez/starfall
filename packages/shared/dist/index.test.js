@@ -60,14 +60,28 @@ const index_1 = require("../src/index");
         (0, vitest_1.expect)(msg.direction.y).toBe(0);
         (0, vitest_1.expect)(typeof msg.timestamp).toBe("number");
     });
-    (0, vitest_1.it)("JoinMessage type works correctly", () => {
-        const msg = { name: "TestPlayer" };
-        (0, vitest_1.expect)(msg.name).toBe("TestPlayer");
+    (0, vitest_1.it)("JoinMessage is an authenticated-account request without a client name", () => {
+        const msg = {};
+        (0, vitest_1.expect)(msg).toEqual({});
+    });
+    (0, vitest_1.it)("validates account profile updates", () => {
+        (0, vitest_1.expect)((0, index_1.validateAccountProfileUpdate)({ displayName: "  Nova  " })).toEqual({
+            ok: true,
+            value: { displayName: "Nova" },
+        });
+        (0, vitest_1.expect)((0, index_1.validateAccountProfileUpdate)({
+            displayName: "x".repeat(index_1.DISPLAY_NAME_MAX_LENGTH + 1),
+        }).ok).toBe(false);
+        (0, vitest_1.expect)((0, index_1.validateAccountProfileUpdate)({ preferences: { soundEnabled: false } })).toEqual({
+            ok: true,
+            value: { preferences: { soundEnabled: false } },
+        });
     });
     (0, vitest_1.it)("WelcomeMessage type works correctly", () => {
         const msg = {
             sessionId: "session-1",
             playerId: "player-1",
+            accountId: "account-1",
             color: "#FF0000",
             phase: index_1.GamePhase.Lobby,
         };

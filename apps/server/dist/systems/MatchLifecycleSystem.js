@@ -46,6 +46,36 @@ class MatchLifecycleSystem {
         this.state.phase = shared_1.GamePhase.Playing;
     }
     /**
+     * Transition from a discussion meeting into voting.
+     */
+    startVoting() {
+        if (this.state.phase !== shared_1.GamePhase.Meeting) {
+            return false;
+        }
+        this.state.phase = shared_1.GamePhase.Voting;
+        return true;
+    }
+    /**
+     * Transition from active voting into result publication.
+     */
+    startVoteResolution() {
+        if (this.state.phase !== shared_1.GamePhase.Voting) {
+            return false;
+        }
+        this.state.phase = shared_1.GamePhase.ResolvingVote;
+        return true;
+    }
+    /**
+     * Resume normal gameplay after an unresolved vote result.
+     */
+    resumePlayingAfterVote() {
+        if (this.state.phase !== shared_1.GamePhase.ResolvingVote) {
+            return false;
+        }
+        this.state.phase = shared_1.GamePhase.Playing;
+        return true;
+    }
+    /**
      * End the match and transition to GameOver phase
      */
     endMatch() {
@@ -59,6 +89,13 @@ class MatchLifecycleSystem {
         this.state.phase = shared_1.GamePhase.Lobby;
         this.state.matchStartTime = 0;
         this.state.meetingEndTime = 0;
+        this.state.voteDeadline = 0;
+        this.state.voteResultsEndTime = 0;
+        this.state.voteSubmitted.clear();
+        this.state.voteTotals.clear();
+        this.state.abstainVotes = 0;
+        this.state.ejectedPlayerId = null;
+        this.state.ejectedPlayerRole = null;
         this.state.winner = null;
         this.state.endReason = null;
         // Reset all players to alive and unready
@@ -80,7 +117,9 @@ class MatchLifecycleSystem {
      */
     isMatchInProgress() {
         return (this.state.phase === shared_1.GamePhase.Playing ||
-            this.state.phase === shared_1.GamePhase.Meeting);
+            this.state.phase === shared_1.GamePhase.Meeting ||
+            this.state.phase === shared_1.GamePhase.Voting ||
+            this.state.phase === shared_1.GamePhase.ResolvingVote);
     }
     /**
      * Check if roles are being assigned

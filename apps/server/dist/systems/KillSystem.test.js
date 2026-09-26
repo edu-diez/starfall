@@ -161,6 +161,12 @@ class TestRandomSource {
         (0, vitest_1.expect)(result.success).toBe(false);
         (0, vitest_1.expect)(result.reason).toBe("Target out of range");
     });
+    (0, vitest_1.it)("rejects a Killer attack while the Killer is venting", () => {
+        setupPlayers("killer", "target", 30);
+        killSystem = new KillSystem_1.KillSystem(state, roleAssignmentSystem, testClock, (sessionId) => sessionId === "killer");
+        const result = killSystem.attemptKill("killer", "target");
+        (0, vitest_1.expect)(result).toMatchObject({ success: false, reason: "Cannot kill while inside a vent" });
+    });
     (0, vitest_1.it)("rejects kill during cooldown", () => {
         setupPlayers("killer", "target1", 30);
         // Add a second target

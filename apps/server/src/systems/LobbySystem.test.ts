@@ -149,11 +149,16 @@ describe("LobbySystem", () => {
     expect(lobbySystem.canStart()).toBe(false);
   });
 
-  it("handles player join with color assignment", () => {
-    const color = lobbySystem.handlePlayerJoin("client-1", "TestPlayer");
+  it("handles account-derived player join with color assignment", () => {
+    const color = lobbySystem.handlePlayerJoin(
+      "client-1",
+      "account-1",
+      "TestPlayer",
+    );
     expect(COLORS).toContain(color);
 
     const player = state.players.get("client-1");
+    expect(player?.accountId).toBe("account-1");
     expect(player?.name).toBe("TestPlayer");
     expect(player?.color).toBe(color);
   });

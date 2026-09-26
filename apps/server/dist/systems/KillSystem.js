@@ -19,19 +19,21 @@ class KillSystem {
     state;
     roleAssignmentSystem;
     clock;
+    isVenting;
     // Private kill cooldown tracking per player (server-only)
     killCooldownUntil = new Map();
-    constructor(state, roleAssignmentSystem, clock) {
+    constructor(state, roleAssignmentSystem, clock, isVenting = () => false) {
         this.state = state;
         this.roleAssignmentSystem = roleAssignmentSystem;
         this.clock = clock || new DefaultClock();
+        this.isVenting = isVenting;
     }
     /**
      * Attempt to perform a kill
      * Returns result with success status and optional error reason
      */
     attemptKill(killerSessionId, targetSessionId) {
-        // Validate phase - only allowed during playing
+        // Validate phase - only allowed during playing (not during meeting)
         if (this.state.phase !== shared_1.GamePhase.Playing) {
             return { success: false, reason: "Kill only allowed during playing phase" };
         }
@@ -46,6 +48,9 @@ class KillSystem {
         // Validate killer has Killer role
         if (!this.roleAssignmentSystem.isKiller(killerSessionId)) {
             return { success: false, reason: "Only the Killer can kill" };
+        }
+        if (this.isVenting(killerSessionId)) {
+            return { success: false, reason: "Cannot kill while inside a vent" };
         }
         // Validate target exists and is alive
         const target = this.state.players.get(targetSessionId);

@@ -148,6 +148,13 @@ class TestRandomSource {
         const result = victorySystem.evaluate();
         (0, vitest_1.expect)(result).toBe(false);
     });
+    (0, vitest_1.it)("detects Crewmate victory for a Killer ejected during vote resolution", () => {
+        setupPlayers(1, 3);
+        state.players.get("killer-0").state = shared_1.PlayerState.Ejected;
+        state.phase = shared_1.GamePhase.ResolvingVote;
+        (0, vitest_1.expect)(victorySystem.evaluate()).toBe(true);
+        (0, vitest_1.expect)(victorySystem.getWinner()).toBe(shared_1.PlayerRole.Crewmate);
+    });
     (0, vitest_1.it)("does not evaluate when in game over phase", () => {
         state.phase = shared_1.GamePhase.GameOver;
         setupPlayers(1, 1);

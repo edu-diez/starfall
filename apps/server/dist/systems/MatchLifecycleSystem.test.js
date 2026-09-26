@@ -96,6 +96,21 @@ const shared_1 = require("@starfall/shared");
         matchLifecycleSystem.completeRoleAssignment();
         (0, vitest_1.expect)(state.phase).toBe(shared_1.GamePhase.Lobby);
     });
+    (0, vitest_1.it)("transitions through voting and returns to playing", () => {
+        state.phase = shared_1.GamePhase.Meeting;
+        (0, vitest_1.expect)(matchLifecycleSystem.startVoting()).toBe(true);
+        (0, vitest_1.expect)(state.phase).toBe(shared_1.GamePhase.Voting);
+        (0, vitest_1.expect)(matchLifecycleSystem.startVoteResolution()).toBe(true);
+        (0, vitest_1.expect)(state.phase).toBe(shared_1.GamePhase.ResolvingVote);
+        (0, vitest_1.expect)(matchLifecycleSystem.resumePlayingAfterVote()).toBe(true);
+        (0, vitest_1.expect)(state.phase).toBe(shared_1.GamePhase.Playing);
+    });
+    (0, vitest_1.it)("rejects invalid voting transitions", () => {
+        (0, vitest_1.expect)(matchLifecycleSystem.startVoting()).toBe(false);
+        state.phase = shared_1.GamePhase.Playing;
+        (0, vitest_1.expect)(matchLifecycleSystem.startVoteResolution()).toBe(false);
+        (0, vitest_1.expect)(matchLifecycleSystem.resumePlayingAfterVote()).toBe(false);
+    });
     (0, vitest_1.it)("endMatch transitions to GameOver phase", () => {
         state.phase = shared_1.GamePhase.Playing;
         matchLifecycleSystem.endMatch();

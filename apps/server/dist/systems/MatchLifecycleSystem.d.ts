@@ -24,6 +24,18 @@ export declare class MatchLifecycleSystem {
      */
     completeRoleAssignment(): void;
     /**
+     * Transition from a discussion meeting into voting.
+     */
+    startVoting(): boolean;
+    /**
+     * Transition from active voting into result publication.
+     */
+    startVoteResolution(): boolean;
+    /**
+     * Resume normal gameplay after an unresolved vote result.
+     */
+    resumePlayingAfterVote(): boolean;
+    /**
      * End the match and transition to GameOver phase
      */
     endMatch(): void;

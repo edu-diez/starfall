@@ -121,10 +121,11 @@ const shared_1 = require("@starfall/shared");
         // Only 3 alive players, need 4
         (0, vitest_1.expect)(lobbySystem.canStart()).toBe(false);
     });
-    (0, vitest_1.it)("handles player join with color assignment", () => {
-        const color = lobbySystem.handlePlayerJoin("client-1", "TestPlayer");
+    (0, vitest_1.it)("handles account-derived player join with color assignment", () => {
+        const color = lobbySystem.handlePlayerJoin("client-1", "account-1", "TestPlayer");
         (0, vitest_1.expect)(shared_1.COLORS).toContain(color);
         const player = state.players.get("client-1");
+        (0, vitest_1.expect)(player?.accountId).toBe("account-1");
         (0, vitest_1.expect)(player?.name).toBe("TestPlayer");
         (0, vitest_1.expect)(player?.color).toBe(color);
     });

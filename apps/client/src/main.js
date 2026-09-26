@@ -1,5 +1,9 @@
 import { Client } from "colyseus.js";
 import { GamePhase, PlayerRole, PlayerState, GAME_CONFIG, MESSAGE_TYPES, COLORS, STARFALL_MAP, } from "@starfall/shared";
+import { getAvailableActions, PlayerInputController, } from "./input/InputController";
+import { DesktopInputAdapter, } from "./input/DesktopInputAdapter";
+import { TouchInputAdapter } from "./input/TouchInputAdapter";
+import { AccountClient } from "./account/AccountClient";
 // Game client class
 class GameClient {
     client;
@@ -10,6 +14,9 @@ class GameClient {
     lobbyUI;
     joinBtn;
     playerNameInput;
+    profileFeedback;
+    accountClient = new AccountClient();
+    accountProfile = null;
     playersContainer;
     playersList;
     mySessionId = null;
@@ -26,13 +33,19 @@ class GameClient {
     phaseTimer = null;
     ventUI = null;
     ventFeedback = null;
+    actionControls = null;
+    touchJoystick = null;
     isVenting = false;
     currentVentNodeId = null;
     connectedVentNodeIds = [];
     // Debug mode
     debugMode = false;
     // Input state
-    keysPressed = new Set();
+    inputController = new PlayerInputController();
+    desktopInput = new DesktopInputAdapter(this.inputController, {
+        onAction: (action) => this.handleDesktopAction(action),
+    });
+    touchInput = new TouchInputAdapter(this.inputController);
     lastSentInput = { x: 0, y: 0 };
     inputSendInterval = null;
     INPUT_SEND_RATE = 60; // Hz - match server tick rate
@@ -44,11 +57,12 @@ class GameClient {
         this.lobbyUI = document.getElementById("lobby-ui");
         this.joinBtn = document.getElementById("join-btn");
         this.playerNameInput = document.getElementById("player-name");
+        this.profileFeedback = document.getElementById("profile-feedback");
         this.playersContainer = document.getElementById("players-container");
         this.playersList = document.getElementById("players-list");
         this.setupCanvas();
         this.setupEventListeners();
-        this.connect();
+        void this.initializeAccount();
     }
     setupCanvas() {
         const resize = () => {
@@ -63,21 +77,15 @@ class GameClient {
             this.joinBtn.disabled = this.playerNameInput.value.trim().length === 0;
         });
         this.joinBtn.addEventListener("click", () => {
-            const name = this.playerNameInput.value.trim();
-            if (name && this.room) {
-                this.room.send(MESSAGE_TYPES.JOIN, { name });
-                this.joinBtn.disabled = true;
-                this.playerNameInput.disabled = true;
-            }
+            void this.saveProfileAndJoin();
         });
         this.playerNameInput.addEventListener("keydown", (e) => {
             if (e.key === "Enter" && !this.joinBtn.disabled) {
                 this.joinBtn.click();
             }
         });
-        // Keyboard input for movement
-        window.addEventListener("keydown", (e) => this.handleKeyDown(e));
-        window.addEventListener("keyup", (e) => this.handleKeyUp(e));
+        this.desktopInput.attach();
+        this.createTouchControls();
         // Debug mode toggle (F3 key)
         window.addEventListener("keydown", (e) => {
             if (e.key === "F3") {
@@ -85,6 +93,45 @@ class GameClient {
                 console.log(`Debug mode: ${this.debugMode ? "ON" : "OFF"}`);
             }
         });
+    }
+    async initializeAccount() {
+        try {
+            this.setProfileFeedback("Loading account…");
+            this.accountProfile = await this.accountClient.loadProfile();
+            this.playerNameInput.value = this.accountProfile.displayName;
+            this.joinBtn.disabled = false;
+            this.setProfileFeedback("Profile loaded. Choose a display name, then join.");
+            await this.connect();
+        }
+        catch (error) {
+            this.setProfileFeedback(error instanceof Error
+                ? error.message
+                : "Unable to initialize account.");
+            this.updateConnectionStatus("Account setup failed", "status-error");
+        }
+    }
+    async saveProfileAndJoin() {
+        const displayName = this.playerNameInput.value.trim();
+        if (!displayName || !this.room)
+            return;
+        this.joinBtn.disabled = true;
+        this.setProfileFeedback("Saving profile…");
+        try {
+            this.accountProfile = await this.accountClient.updateProfile({
+                displayName,
+            });
+            this.playerNameInput.value = this.accountProfile.displayName;
+            this.room.send(MESSAGE_TYPES.JOIN, {});
+            this.playerNameInput.disabled = true;
+            this.setProfileFeedback("Profile saved.");
+        }
+        catch (error) {
+            this.joinBtn.disabled = false;
+            this.setProfileFeedback(error instanceof Error ? error.message : "Unable to save profile.");
+        }
+    }
+    setProfileFeedback(message) {
+        this.profileFeedback.textContent = message;
     }
     createColorPickerUI() {
         if (this.colorPickerUI)
@@ -405,12 +452,15 @@ class GameClient {
         this.startDeadlineTimer(panel.querySelector("#phase-timer"), deadline, "Discussion ends in");
     }
     showVoting(deadline) {
-        const livingPlayers = [...(this.room?.state.players.values() ?? [])]
-            .filter((player) => player.state === PlayerState.Alive);
-        const candidates = livingPlayers.map((player) => `<button data-vote-target="${player.sessionId}" style="margin: 6px;">Vote ${player.name}</button>`).join("");
+        const livingPlayers = [...(this.room?.state.players.values() ?? [])].filter((player) => player.state === PlayerState.Alive);
+        const candidates = livingPlayers
+            .map((player) => `<button data-vote-target="${player.sessionId}" style="margin: 6px;">Vote ${player.name}</button>`)
+            .join("");
         const panel = this.showPhaseUI(`<h1 style="margin-bottom: 12px;">Vote</h1><p id="phase-timer" style="font-size: 24px; color: #93c5fd;"></p><p id="vote-feedback" style="min-height: 24px; margin: 16px 0; color: #cbd5e1;">Choose a living player or abstain. You may change your vote.</p><div>${candidates}</div><button data-vote-target="" style="margin-top: 14px;">Abstain</button>`);
         this.startDeadlineTimer(panel.querySelector("#phase-timer"), deadline, "Voting ends in");
-        panel.querySelectorAll("button[data-vote-target]").forEach((button) => {
+        panel
+            .querySelectorAll("button[data-vote-target]")
+            .forEach((button) => {
             button.addEventListener("click", () => {
                 const rawTarget = button.dataset.voteTarget ?? "";
                 this.submitVote(rawTarget || null);
@@ -430,7 +480,7 @@ class GameClient {
             .join("") || "<li>No player votes</li>";
         const ejection = message.ejectedSessionId
             ? `<p style="margin-top: 16px; color: #fca5a5;"><strong>${playerName(message.ejectedSessionId)}</strong> was ejected. Role: <strong>${message.ejectedRole}</strong>.</p>`
-            : "<p style=\"margin-top: 16px; color: #cbd5e1;\">No player was ejected.</p>";
+            : '<p style="margin-top: 16px; color: #cbd5e1;">No player was ejected.</p>';
         const panel = this.showPhaseUI(`<h1>Vote Results</h1><ul style="list-style: none; margin: 16px 0;">${totals}</ul><p>Abstentions: ${message.abstainVotes}</p>${ejection}<p id="phase-timer" style="margin-top: 20px; color: #93c5fd;"></p>`);
         this.startDeadlineTimer(panel.querySelector("#phase-timer"), message.resultsEndTime, "Returning to play in");
     }
@@ -438,7 +488,8 @@ class GameClient {
         this.showPhaseUI(`<h1 style="color: ${winner === PlayerRole.Killer ? "#f87171" : "#86efac"};">${winner === PlayerRole.Killer ? "Killer Victory" : "Crewmate Victory"}</h1><p style="margin-top: 16px; color: #cbd5e1;">${reason}</p>`);
     }
     updateVentUI(message) {
-        const canUseVents = this.myRole === PlayerRole.Killer && this.room?.state.phase === GamePhase.Playing;
+        const canUseVents = this.myRole === PlayerRole.Killer &&
+            this.room?.state.phase === GamePhase.Playing;
         if (!canUseVents) {
             this.ventUI?.remove();
             this.ventUI = null;
@@ -448,12 +499,16 @@ class GameClient {
         if (!this.ventUI) {
             this.ventUI = document.createElement("div");
             this.ventUI.id = "vent-controls";
-            this.ventUI.style.cssText = "position:fixed;right:20px;bottom:20px;z-index:800;width:min(270px,calc(100vw - 40px));padding:14px;background:rgba(31,41,55,.94);border:1px solid #ef4444;border-radius:10px;color:#f8fafc;text-align:center;";
+            this.ventUI.style.cssText =
+                "position:fixed;right:20px;bottom:20px;z-index:800;width:min(270px,calc(100vw - 40px));padding:14px;background:rgba(31,41,55,.94);border:1px solid #ef4444;border-radius:10px;color:#f8fafc;text-align:center;";
             document.body.appendChild(this.ventUI);
         }
-        const localPlayer = this.mySessionId ? this.room?.state.players.get(this.mySessionId) : undefined;
+        const localPlayer = this.mySessionId
+            ? this.room?.state.players.get(this.mySessionId)
+            : undefined;
         const nearbyNode = !this.isVenting && localPlayer
-            ? STARFALL_MAP.ventNodes.find((node) => Math.hypot(localPlayer.x - node.x, localPlayer.y - node.y) <= node.radius)
+            ? STARFALL_MAP.ventNodes.find((node) => Math.hypot(localPlayer.x - node.x, localPlayer.y - node.y) <=
+                node.radius)
             : undefined;
         const destinations = this.connectedVentNodeIds
             .map((nodeId) => STARFALL_MAP.ventNodes.find((node) => node.id === nodeId))
@@ -464,58 +519,133 @@ class GameClient {
         this.ventFeedback = this.ventUI.querySelector("#vent-feedback");
         if (message?.reason && this.ventFeedback)
             this.ventFeedback.textContent = message.reason;
-        this.ventUI.querySelector("[data-vent-enter]")?.addEventListener("click", (event) => {
-            const nodeId = event.currentTarget.dataset.ventEnter;
-            this.room?.send(MESSAGE_TYPES.VENT_ENTER, { nodeId });
-        });
-        this.ventUI.querySelectorAll("[data-vent-travel]").forEach((button) => {
-            button.addEventListener("click", () => {
-                this.room?.send(MESSAGE_TYPES.VENT_TRAVEL, { destinationNodeId: button.dataset.ventTravel });
+        this.ventUI
+            .querySelector("[data-vent-enter]")
+            ?.addEventListener("click", (event) => {
+            const nodeId = event.currentTarget.dataset
+                .ventEnter;
+            this.room?.send(MESSAGE_TYPES.VENT_ENTER, {
+                nodeId,
             });
         });
-        this.ventUI.querySelector("[data-vent-exit]")?.addEventListener("click", () => {
+        this.ventUI
+            .querySelectorAll("[data-vent-travel]")
+            .forEach((button) => {
+            button.addEventListener("click", () => {
+                this.room?.send(MESSAGE_TYPES.VENT_TRAVEL, {
+                    destinationNodeId: button.dataset.ventTravel,
+                });
+            });
+        });
+        this.ventUI
+            .querySelector("[data-vent-exit]")
+            ?.addEventListener("click", () => {
             this.room?.send(MESSAGE_TYPES.VENT_EXIT, {});
         });
     }
-    handleKeyDown(e) {
-        // Prevent default for game keys
-        if ([
-            "ArrowUp",
-            "ArrowDown",
-            "ArrowLeft",
-            "ArrowRight",
-            "w",
-            "a",
-            "s",
-            "d",
-            "W",
-            "A",
-            "S",
-            "D",
-        ].includes(e.key)) {
-            e.preventDefault();
-        }
-        this.keysPressed.add(e.key.toLowerCase());
+    createTouchControls() {
+        this.touchJoystick = document.createElement("div");
+        this.touchJoystick.id = "touch-joystick";
+        this.touchJoystick.setAttribute("aria-label", "Movement joystick");
+        this.touchJoystick.style.cssText = `
+      position: fixed; left: max(20px, env(safe-area-inset-left));
+      bottom: max(20px, env(safe-area-inset-bottom)); width: 132px; height: 132px;
+      border-radius: 50%; border: 2px solid rgba(191, 219, 254, .72);
+      background: rgba(15, 23, 42, .62); z-index: 800; touch-action: none;
+      display: none;
+    `;
+        const thumb = document.createElement("div");
+        thumb.style.cssText = `position:absolute;left:50%;top:50%;width:48px;height:48px;transform:translate(-50%,-50%);border-radius:50%;background:rgba(147,197,253,.72);pointer-events:none;`;
+        this.touchJoystick.appendChild(thumb);
+        document.body.appendChild(this.touchJoystick);
+        this.touchInput.attach(this.touchJoystick);
     }
-    handleKeyUp(e) {
-        this.keysPressed.delete(e.key.toLowerCase());
+    getLocalPlayer() {
+        return this.mySessionId
+            ? this.room?.state.players.get(this.mySessionId)
+            : undefined;
     }
-    getInputDirection() {
-        let x = 0;
-        let y = 0;
-        if (this.keysPressed.has("arrowup") || this.keysPressed.has("w")) {
-            y -= 1;
+    findNearbyKillTarget() {
+        const localPlayer = this.getLocalPlayer();
+        if (!localPlayer || !this.room)
+            return undefined;
+        let closest;
+        let closestDistance = GAME_CONFIG.KILL_RANGE;
+        this.room.state.players.forEach((player) => {
+            if (player.sessionId === localPlayer.sessionId ||
+                player.state !== PlayerState.Alive)
+                return;
+            const distance = Math.hypot(player.x - localPlayer.x, player.y - localPlayer.y);
+            if (distance <= closestDistance) {
+                closest = player;
+                closestDistance = distance;
+            }
+        });
+        return closest;
+    }
+    getActionContext() {
+        const localPlayer = this.getLocalPlayer();
+        return {
+            phase: this.room?.state.phase ?? null,
+            role: this.myRole,
+            isAlive: localPlayer?.state === PlayerState.Alive,
+            isVenting: this.isVenting,
+            hasNearbyKillTarget: Boolean(this.findNearbyKillTarget()),
+        };
+    }
+    updateActionControls() {
+        if (!this.touchJoystick)
+            return;
+        const actions = getAvailableActions(this.getActionContext());
+        const shouldShow = actions.canKill || actions.canCallMeeting;
+        this.touchJoystick.style.display = shouldShow ? "block" : "none";
+        if (!shouldShow) {
+            this.actionControls?.remove();
+            this.actionControls = null;
+            return;
         }
-        if (this.keysPressed.has("arrowdown") || this.keysPressed.has("s")) {
-            y += 1;
+        if (!this.actionControls) {
+            this.actionControls = document.createElement("div");
+            this.actionControls.id = "action-controls";
+            this.actionControls.style.cssText = `
+        position:fixed;right:max(20px, env(safe-area-inset-right));
+        bottom:max(20px, env(safe-area-inset-bottom));z-index:800;display:flex;
+        flex-direction:column;align-items:stretch;gap:10px;width:min(150px,35vw);
+      `;
+            document.body.appendChild(this.actionControls);
         }
-        if (this.keysPressed.has("arrowleft") || this.keysPressed.has("a")) {
-            x -= 1;
+        this.actionControls.innerHTML = `
+      ${actions.canKill ? '<button type="button" data-game-action="kill">Kill</button>' : ""}
+      ${actions.canCallMeeting ? '<button type="button" data-game-action="meeting">Meeting</button>' : ""}
+    `;
+        this.actionControls
+            .querySelectorAll("button[data-game-action]")
+            .forEach((button) => {
+            button.style.cssText =
+                "min-height:56px;border:2px solid #f8fafc;border-radius:999px;background:#1d4ed8;color:#fff;font-size:16px;font-weight:700;touch-action:manipulation;";
+            button.addEventListener("click", () => {
+                this.handleAction(button.dataset.gameAction);
+            });
+        });
+    }
+    handleDesktopAction(action) {
+        this.handleAction(action);
+    }
+    handleAction(action) {
+        const availableActions = getAvailableActions(this.getActionContext());
+        if (action === "kill" && availableActions.canKill) {
+            const target = this.findNearbyKillTarget();
+            if (target && this.room) {
+                const message = { targetSessionId: target.sessionId };
+                this.room.send(MESSAGE_TYPES.KILL, message);
+            }
         }
-        if (this.keysPressed.has("arrowright") || this.keysPressed.has("d")) {
-            x += 1;
+        else if (action === "meeting" &&
+            availableActions.canCallMeeting &&
+            this.room) {
+            const message = {};
+            this.room.send(MESSAGE_TYPES.CALL_MEETING, message);
         }
-        return { x, y };
     }
     async connect() {
         try {
@@ -535,6 +665,7 @@ class GameClient {
         this.room.onStateChange((state) => {
             this.renderPlayersList(state.players);
             this.updateVentUI();
+            this.updateActionControls();
         });
         this.room.onMessage(MESSAGE_TYPES.WELCOME, (message) => {
             this.mySessionId = message.sessionId;
@@ -598,6 +729,7 @@ class GameClient {
             this.myRole = message.role;
             this.showRoleReveal(message.role);
             this.updateVentUI();
+            this.updateActionControls();
         });
         this.room.onMessage(MESSAGE_TYPES.VENT_STATE, (message) => {
             this.isVenting = message.isVenting;
@@ -605,13 +737,16 @@ class GameClient {
             this.connectedVentNodeIds = message.connectedNodeIds;
             this.lastSentInput = { x: 0, y: 0 };
             this.updateVentUI(message);
+            this.updateActionControls();
         });
         this.room.onMessage(MESSAGE_TYPES.MEETING_STARTED, (message) => {
             this.lastSentInput = { x: 0, y: 0 };
             this.showDiscussion(message.discussionEndTime);
         });
         this.room.onMessage(MESSAGE_TYPES.MEETING_STATE, (message) => {
-            if (message.phase === "discussion" && message.discussionEndTime && !this.phaseUI) {
+            if (message.phase === "discussion" &&
+                message.discussionEndTime &&
+                !this.phaseUI) {
                 this.showDiscussion(message.discussionEndTime);
             }
         });
@@ -621,7 +756,9 @@ class GameClient {
         this.room.onMessage(MESSAGE_TYPES.VOTE_SUBMITTED, (message) => {
             const feedback = this.phaseUI?.querySelector("#vote-feedback");
             if (feedback) {
-                feedback.textContent = message.success ? "Vote submitted. You may still change it." : message.reason ?? "Vote rejected.";
+                feedback.textContent = message.success
+                    ? "Vote submitted. You may still change it."
+                    : (message.reason ?? "Vote rejected.");
             }
         });
         this.room.onMessage(MESSAGE_TYPES.VOTING_RESULTS, (message) => {
@@ -642,6 +779,7 @@ class GameClient {
             this.updateConnectionStatus(`Error: ${message.message}`, "status-error");
             this.joinBtn.disabled = false;
             this.playerNameInput.disabled = false;
+            this.setProfileFeedback(message.message);
         });
         this.room.onLeave((code) => {
             console.log("Left room:", code);
@@ -652,6 +790,8 @@ class GameClient {
             this.hidePhaseUI();
             this.ventUI?.remove();
             this.ventUI = null;
+            this.actionControls?.remove();
+            this.actionControls = null;
             this.myRole = null;
             this.isVenting = false;
             this.currentVentNodeId = null;
@@ -678,7 +818,7 @@ class GameClient {
     sendMovementInput() {
         if (!this.room || !this.mySessionId || this.isVenting)
             return;
-        const direction = this.getInputDirection();
+        const direction = this.inputController.getMovement();
         // Only send if input changed (optimization)
         if (direction.x === this.lastSentInput.x &&
             direction.y === this.lastSentInput.y) {
@@ -774,10 +914,11 @@ class GameClient {
             this.ctx.fillText(room.name, x, y);
         }
         // Draw meeting room indicator
-        const meetingRoom = STARFALL_MAP.rooms.find(r => r.id === STARFALL_MAP.meetingRoomId);
+        const meetingRoom = STARFALL_MAP.rooms.find((r) => r.id === STARFALL_MAP.meetingRoomId);
         if (meetingRoom) {
             const x = offsetX + (meetingRoom.bounds.x + meetingRoom.bounds.width / 2) * scale;
-            const y = offsetY + (meetingRoom.bounds.y + meetingRoom.bounds.height / 2) * scale;
+            const y = offsetY +
+                (meetingRoom.bounds.y + meetingRoom.bounds.height / 2) * scale;
             this.ctx.fillStyle = "rgba(59, 130, 246, 0.3)";
             this.ctx.beginPath();
             this.ctx.arc(x, y, Math.max(50, 80 * scale), 0, Math.PI * 2);
@@ -839,8 +980,8 @@ class GameClient {
         this.ctx.lineWidth = 1 * scale;
         this.ctx.setLineDash([10 * scale, 5 * scale]);
         for (const conn of STARFALL_MAP.ventConnections) {
-            const from = STARFALL_MAP.ventNodes.find(v => v.id === conn.from);
-            const to = STARFALL_MAP.ventNodes.find(v => v.id === conn.to);
+            const from = STARFALL_MAP.ventNodes.find((v) => v.id === conn.from);
+            const to = STARFALL_MAP.ventNodes.find((v) => v.id === conn.to);
             if (from && to) {
                 const x1 = offsetX + from.x * scale;
                 const y1 = offsetY + from.y * scale;

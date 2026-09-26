@@ -13,6 +13,8 @@ import {
   PlayerJoinedMessage,
   PlayerLeftMessage,
   ErrorMessage,
+  DISPLAY_NAME_MAX_LENGTH,
+  validateAccountProfileUpdate,
 } from "../src/index";
 
 describe("Shared package", () => {
@@ -81,15 +83,34 @@ describe("Shared package", () => {
     expect(typeof msg.timestamp).toBe("number");
   });
 
-  it("JoinMessage type works correctly", () => {
-    const msg: JoinMessage = { name: "TestPlayer" };
-    expect(msg.name).toBe("TestPlayer");
+  it("JoinMessage is an authenticated-account request without a client name", () => {
+    const msg: JoinMessage = {};
+    expect(msg).toEqual({});
+  });
+
+  it("validates account profile updates", () => {
+    expect(validateAccountProfileUpdate({ displayName: "  Nova  " })).toEqual({
+      ok: true,
+      value: { displayName: "Nova" },
+    });
+    expect(
+      validateAccountProfileUpdate({
+        displayName: "x".repeat(DISPLAY_NAME_MAX_LENGTH + 1),
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateAccountProfileUpdate({ preferences: { soundEnabled: false } }),
+    ).toEqual({
+      ok: true,
+      value: { preferences: { soundEnabled: false } },
+    });
   });
 
   it("WelcomeMessage type works correctly", () => {
     const msg: WelcomeMessage = {
       sessionId: "session-1",
       playerId: "player-1",
+      accountId: "account-1",
       color: "#FF0000",
       phase: GamePhase.Lobby,
     };

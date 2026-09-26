@@ -1,13 +1,10 @@
 import { Schema, MapSchema, type, ArraySchema } from "@colyseus/schema";
-import {
-  PlayerState,
-  GamePhase,
-  Vec2,
-  type Color,
-} from "@starfall/shared";
+import { PlayerState, GamePhase, Vec2, type Color } from "@starfall/shared";
 
 export class Player extends Schema {
   @type("string") sessionId: string = "";
+  /** Safe public identifier only; credentials and account records remain private. */
+  @type("string") accountId: string = "";
   @type("string") name: string = "";
   @type("string") color: Color = "#FF0000";
   @type("string") state: PlayerState = PlayerState.Alive;
@@ -33,9 +30,15 @@ export class GameRoomState extends Schema {
   @type("string") winner: string | null = null;
   @type("string") endReason: string | null = null;
 
-  createPlayer(sessionId: string, name: string, color: Color): Player {
+  createPlayer(
+    sessionId: string,
+    accountId: string,
+    name: string,
+    color: Color,
+  ): Player {
     const player = new Player();
     player.sessionId = sessionId;
+    player.accountId = accountId;
     player.name = name;
     player.color = color;
     player.x = 960; // Center of map

@@ -152,10 +152,19 @@ export class LobbySystem {
   }
 
   /**
-   * Handle player joining - assign color
+   * Handle an already-authorized account joining and assign a unique color.
    */
-  handlePlayerJoin(sessionId: string, name: string): string {
-    const player = this.state.createPlayer(sessionId, name, "#FF0000"); // Temporary color
+  handlePlayerJoin(
+    sessionId: string,
+    accountId: string,
+    displayName: string,
+  ): string {
+    const player = this.state.createPlayer(
+      sessionId,
+      accountId,
+      displayName,
+      "#FF0000",
+    );
     this.state.players.set(sessionId, player);
 
     // Assign an available color

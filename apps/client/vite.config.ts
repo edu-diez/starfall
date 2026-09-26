@@ -14,6 +14,9 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      "/api": {
+        target: "http://localhost:2567",
+      },
       "/colyseus": {
         target: "http://localhost:2567",
         ws: true,

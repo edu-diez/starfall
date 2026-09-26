@@ -14,6 +14,11 @@ import {
 // Mock Colyseus Room and Client
 const mockClient = (sessionId: string) => ({
   sessionId,
+  auth: {
+    id: `account-${sessionId}`,
+    displayName: "TestPlayer",
+    preferences: { soundEnabled: true },
+  },
   send: vi.fn(),
 });
 
@@ -45,6 +50,7 @@ describe("GameRoom", () => {
     const player = mockRoom.state.players.get("client-1");
     expect(player).toBeDefined();
     expect(player?.name).toBe("TestPlayer");
+    expect(player?.accountId).toBe("account-client-1");
     expect(player?.sessionId).toBe("client-1");
     expect(player?.state).toBe(PlayerState.Alive);
     // Role is no longer in public state (private role assignment)
@@ -62,6 +68,28 @@ describe("GameRoom", () => {
     const player2 = mockRoom.state.players.get("client-2");
 
     expect(player1?.color).not.toBe(player2?.color);
+  });
+
+  it("uses the authenticated profile instead of a client-supplied name", () => {
+    mockRoom.onCreate({});
+    const client = mockClient("client-1");
+    client.auth.displayName = "Authorized Pilot";
+
+    mockRoom.handleJoin(client, { name: "Forged Name" });
+
+    expect(mockRoom.state.players.get("client-1")?.name).toBe(
+      "Authorized Pilot",
+    );
+  });
+
+  it("keeps account credentials out of public room state", () => {
+    mockRoom.onCreate({});
+    const client = mockClient("client-1");
+    mockRoom.handleJoin(client, {});
+
+    const publicPlayer = mockRoom.state.players.get("client-1")!;
+    expect(Object.keys(publicPlayer)).not.toContain("credential");
+    expect(JSON.stringify(publicPlayer)).not.toContain("starfall_account");
   });
 
   it("removes player on leave", () => {
@@ -338,13 +366,22 @@ describe("GameRoom", () => {
       const player = mockRoom.state.players.get("client-1")!;
       player.x = 960;
       player.y = 150;
-      mockRoom.roleAssignmentSystem["roleMap"].set("client-1", PlayerRole.Killer);
-      mockRoom.handleMove(client, { direction: { x: 1, y: 0 }, timestamp: Date.now() });
+      mockRoom.roleAssignmentSystem["roleMap"].set(
+        "client-1",
+        PlayerRole.Killer,
+      );
+      mockRoom.handleMove(client, {
+        direction: { x: 1, y: 0 },
+        timestamp: Date.now(),
+      });
       mockRoom.handleVentEnter(client, { nodeId: "vent-bridge" });
 
       expect(mockRoom.ventSystem.isVenting("client-1")).toBe(true);
       expect(mockRoom.playerInputs.has("client-1")).toBe(false);
-      mockRoom.handleMove(client, { direction: { x: 1, y: 0 }, timestamp: Date.now() });
+      mockRoom.handleMove(client, {
+        direction: { x: 1, y: 0 },
+        timestamp: Date.now(),
+      });
       expect(mockRoom.playerInputs.has("client-1")).toBe(false);
 
       const positionBeforeTick = { x: player.x, y: player.y };
@@ -364,7 +401,10 @@ describe("GameRoom", () => {
       const player = mockRoom.state.players.get("client-1")!;
       player.x = 960;
       player.y = 150;
-      mockRoom.roleAssignmentSystem["roleMap"].set("client-1", PlayerRole.Killer);
+      mockRoom.roleAssignmentSystem["roleMap"].set(
+        "client-1",
+        PlayerRole.Killer,
+      );
     });
 
     it("rejects malformed vent payloads before mutation", () => {
@@ -372,10 +412,13 @@ describe("GameRoom", () => {
       mockRoom.handleVentEnter(client, {});
 
       expect(mockRoom.ventSystem.isVenting("client-1")).toBe(false);
-      expect(client.send).toHaveBeenCalledWith(MESSAGE_TYPES.VENT_STATE, expect.objectContaining({
-        success: false,
-        reason: "Vent node must be a string",
-      }));
+      expect(client.send).toHaveBeenCalledWith(
+        MESSAGE_TYPES.VENT_STATE,
+        expect.objectContaining({
+          success: false,
+          reason: "Vent node must be a string",
+        }),
+      );
     });
 
     it("cleans vent state when a meeting begins", () => {
@@ -626,9 +669,15 @@ describe("GameRoom", () => {
 describe("GameRoomState", () => {
   it("creates player with correct defaults", () => {
     const state = new GameRoomState();
-    const player = state.createPlayer("session-1", "TestPlayer", "#FF0000");
+    const player = state.createPlayer(
+      "session-1",
+      "account-1",
+      "TestPlayer",
+      "#FF0000",
+    );
 
     expect(player.sessionId).toBe("session-1");
+    expect(player.accountId).toBe("account-1");
     expect(player.name).toBe("TestPlayer");
     expect(player.color).toBe("#FF0000");
     expect(player.x).toBe(960);

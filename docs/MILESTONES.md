@@ -1081,6 +1081,16 @@ Run one complete match with mixed desktop and mobile clients.
 
 # Milestone 10: Accounts and Persistence
 
+### Implementation decisions
+
+- Status: Accepted
+- Date: 2026-09-26
+- Milestone: M10
+- Identity uses a device-linked guest account. The server issues an opaque, HttpOnly, SameSite=Lax cookie; passwords and third-party login are not implemented.
+- Persistence uses a versioned JSON file with atomic temp-file-and-rename writes. This is suitable for a single local server process only; replacing it with production storage must preserve the `PersistenceService` boundary.
+- Profiles store a stable account ID, 1–24-character trimmed display name, and `soundEnabled` preference. Progression, statistics, and cosmetics are deliberately empty until separately specified.
+- The project stores no PII under this MVP account design. Local account data is retained in the local persistence file until a developer or deployment operator deletes it; user-facing deletion/recovery flows are deferred.
+
 ## Goal
 
 Give each installation or authenticated user a stable identity and persist the minimum profile information required by the game specification.
@@ -1445,7 +1455,7 @@ M6  Emergency meetings and discussion phase            COMPLETED
 M7  Voting, ejection, and complete victory flow        COMPLETE
 M8  Vent network and Killer traversal                  COMPLETE
 M9  Mobile controls and responsive UI                  COMPLETE
-M10 Accounts and persistence                           NOT STARTED
+M10 Accounts and persistence                           COMPLETE
 M11 Reconnection and resilience                        NOT STARTED
 M12 Networking polish and gameplay presentation        NOT STARTED
 M13 Full-match hardening and release candidate         NOT STARTED

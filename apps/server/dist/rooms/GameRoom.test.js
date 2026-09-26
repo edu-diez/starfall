@@ -7,6 +7,11 @@ const shared_1 = require("@starfall/shared");
 // Mock Colyseus Room and Client
 const mockClient = (sessionId) => ({
     sessionId,
+    auth: {
+        id: `account-${sessionId}`,
+        displayName: "TestPlayer",
+        preferences: { soundEnabled: true },
+    },
     send: vitest_1.vi.fn(),
 });
 const mockBroadcast = vitest_1.vi.fn();
@@ -32,6 +37,7 @@ const mockBroadcast = vitest_1.vi.fn();
         const player = mockRoom.state.players.get("client-1");
         (0, vitest_1.expect)(player).toBeDefined();
         (0, vitest_1.expect)(player?.name).toBe("TestPlayer");
+        (0, vitest_1.expect)(player?.accountId).toBe("account-client-1");
         (0, vitest_1.expect)(player?.sessionId).toBe("client-1");
         (0, vitest_1.expect)(player?.state).toBe(shared_1.PlayerState.Alive);
         // Role is no longer in public state (private role assignment)
@@ -45,6 +51,21 @@ const mockBroadcast = vitest_1.vi.fn();
         const player1 = mockRoom.state.players.get("client-1");
         const player2 = mockRoom.state.players.get("client-2");
         (0, vitest_1.expect)(player1?.color).not.toBe(player2?.color);
+    });
+    (0, vitest_1.it)("uses the authenticated profile instead of a client-supplied name", () => {
+        mockRoom.onCreate({});
+        const client = mockClient("client-1");
+        client.auth.displayName = "Authorized Pilot";
+        mockRoom.handleJoin(client, { name: "Forged Name" });
+        (0, vitest_1.expect)(mockRoom.state.players.get("client-1")?.name).toBe("Authorized Pilot");
+    });
+    (0, vitest_1.it)("keeps account credentials out of public room state", () => {
+        mockRoom.onCreate({});
+        const client = mockClient("client-1");
+        mockRoom.handleJoin(client, {});
+        const publicPlayer = mockRoom.state.players.get("client-1");
+        (0, vitest_1.expect)(Object.keys(publicPlayer)).not.toContain("credential");
+        (0, vitest_1.expect)(JSON.stringify(publicPlayer)).not.toContain("starfall_account");
     });
     (0, vitest_1.it)("removes player on leave", () => {
         mockRoom.onCreate({});
@@ -250,8 +271,66 @@ const mockBroadcast = vitest_1.vi.fn();
             mockRoom.handleLeave(client);
             (0, vitest_1.expect)(mockRoom.playerInputs.has("client-1")).toBe(false);
         });
+        (0, vitest_1.it)("blocks cached and new movement while a player is venting", () => {
+            const client = mockClient("client-1");
+            const player = mockRoom.state.players.get("client-1");
+            player.x = 960;
+            player.y = 150;
+            mockRoom.roleAssignmentSystem["roleMap"].set("client-1", shared_1.PlayerRole.Killer);
+            mockRoom.handleMove(client, {
+                direction: { x: 1, y: 0 },
+                timestamp: Date.now(),
+            });
+            mockRoom.handleVentEnter(client, { nodeId: "vent-bridge" });
+            (0, vitest_1.expect)(mockRoom.ventSystem.isVenting("client-1")).toBe(true);
+            (0, vitest_1.expect)(mockRoom.playerInputs.has("client-1")).toBe(false);
+            mockRoom.handleMove(client, {
+                direction: { x: 1, y: 0 },
+                timestamp: Date.now(),
+            });
+            (0, vitest_1.expect)(mockRoom.playerInputs.has("client-1")).toBe(false);
+            const positionBeforeTick = { x: player.x, y: player.y };
+            mockRoom.lastTickTime = Date.now() - 1000;
+            mockRoom.tick();
+            (0, vitest_1.expect)(player).toMatchObject(positionBeforeTick);
+        });
     });
     // Lobby and Color System tests
+    (0, vitest_1.describe)("Vent System", () => {
+        (0, vitest_1.beforeEach)(() => {
+            mockRoom.onCreate({});
+            const client = mockClient("client-1");
+            mockRoom.handleJoin(client, { name: "Killer" });
+            mockRoom.state.phase = shared_1.GamePhase.Playing;
+            const player = mockRoom.state.players.get("client-1");
+            player.x = 960;
+            player.y = 150;
+            mockRoom.roleAssignmentSystem["roleMap"].set("client-1", shared_1.PlayerRole.Killer);
+        });
+        (0, vitest_1.it)("rejects malformed vent payloads before mutation", () => {
+            const client = mockClient("client-1");
+            mockRoom.handleVentEnter(client, {});
+            (0, vitest_1.expect)(mockRoom.ventSystem.isVenting("client-1")).toBe(false);
+            (0, vitest_1.expect)(client.send).toHaveBeenCalledWith(shared_1.MESSAGE_TYPES.VENT_STATE, vitest_1.expect.objectContaining({
+                success: false,
+                reason: "Vent node must be a string",
+            }));
+        });
+        (0, vitest_1.it)("cleans vent state when a meeting begins", () => {
+            const client = mockClient("client-1");
+            mockRoom.handleVentEnter(client, { nodeId: "vent-bridge" });
+            (0, vitest_1.expect)(mockRoom.ventSystem.isVenting("client-1")).toBe(true);
+            mockRoom.handleCallMeeting(client, {});
+            (0, vitest_1.expect)(mockRoom.ventSystem.isVenting("client-1")).toBe(false);
+            (0, vitest_1.expect)(mockRoom.state.phase).toBe(shared_1.GamePhase.Meeting);
+        });
+        (0, vitest_1.it)("cleans vent state when a player leaves", () => {
+            const client = mockClient("client-1");
+            mockRoom.handleVentEnter(client, { nodeId: "vent-bridge" });
+            mockRoom.handleLeave(client);
+            (0, vitest_1.expect)(mockRoom.ventSystem.isVenting("client-1")).toBe(false);
+        });
+    });
     (0, vitest_1.describe)("Lobby System", () => {
         (0, vitest_1.beforeEach)(() => {
             mockRoom.onCreate({});
@@ -426,8 +505,9 @@ const mockBroadcast = vitest_1.vi.fn();
 (0, vitest_1.describe)("GameRoomState", () => {
     (0, vitest_1.it)("creates player with correct defaults", () => {
         const state = new GameRoomState_1.GameRoomState();
-        const player = state.createPlayer("session-1", "TestPlayer", "#FF0000");
+        const player = state.createPlayer("session-1", "account-1", "TestPlayer", "#FF0000");
         (0, vitest_1.expect)(player.sessionId).toBe("session-1");
+        (0, vitest_1.expect)(player.accountId).toBe("account-1");
         (0, vitest_1.expect)(player.name).toBe("TestPlayer");
         (0, vitest_1.expect)(player.color).toBe("#FF0000");
         (0, vitest_1.expect)(player.x).toBe(960);

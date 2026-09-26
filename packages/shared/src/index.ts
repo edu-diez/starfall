@@ -75,6 +75,85 @@ export const COLORS = [
 
 export type Color = (typeof COLORS)[number];
 
+export const DISPLAY_NAME_MIN_LENGTH = 1;
+export const DISPLAY_NAME_MAX_LENGTH = 24;
+
+export interface AccountPreferences {
+  soundEnabled: boolean;
+}
+
+export interface AccountProfile {
+  /** Stable, safe-to-display account identifier. Never use this as a credential. */
+  id: string;
+  displayName: string;
+  preferences: AccountPreferences;
+}
+
+export interface AccountProfileUpdate {
+  displayName?: string;
+  preferences?: Partial<AccountPreferences>;
+}
+
+export const DEFAULT_ACCOUNT_PREFERENCES: AccountPreferences = {
+  soundEnabled: true,
+};
+
+export type AccountProfileValidation =
+  { ok: true; value: AccountProfileUpdate } | { ok: false; message: string };
+
+export function validateAccountProfileUpdate(
+  value: unknown,
+): AccountProfileValidation {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { ok: false, message: "Profile update must be an object" };
+  }
+
+  const update = value as Record<string, unknown>;
+  const result: AccountProfileUpdate = {};
+  if ("displayName" in update) {
+    if (typeof update.displayName !== "string") {
+      return { ok: false, message: "Display name must be text" };
+    }
+    const displayName = update.displayName.trim();
+    if (
+      displayName.length < DISPLAY_NAME_MIN_LENGTH ||
+      displayName.length > DISPLAY_NAME_MAX_LENGTH
+    ) {
+      return {
+        ok: false,
+        message: `Display name must be ${DISPLAY_NAME_MIN_LENGTH}-${DISPLAY_NAME_MAX_LENGTH} characters`,
+      };
+    }
+    result.displayName = displayName;
+  }
+
+  if ("preferences" in update) {
+    if (
+      !update.preferences ||
+      typeof update.preferences !== "object" ||
+      Array.isArray(update.preferences)
+    ) {
+      return { ok: false, message: "Preferences must be an object" };
+    }
+    const preferences = update.preferences as Record<string, unknown>;
+    if (
+      "soundEnabled" in preferences &&
+      typeof preferences.soundEnabled !== "boolean"
+    ) {
+      return { ok: false, message: "Sound preference must be true or false" };
+    }
+    result.preferences =
+      "soundEnabled" in preferences
+        ? { soundEnabled: preferences.soundEnabled as boolean }
+        : {};
+  }
+
+  if (!result.displayName && !result.preferences) {
+    return { ok: false, message: "Profile update is empty" };
+  }
+  return { ok: true, value: result };
+}
+
 // Network message types
 export const MESSAGE_TYPES = {
   JOIN: "join",
@@ -105,6 +184,7 @@ export const MESSAGE_TYPES = {
   VENT_TRAVEL: "ventTravel",
   VENT_EXIT: "ventExit",
   VENT_STATE: "ventState",
+  ACCOUNT_PROFILE: "accountProfile",
 } as const;
 
 export type MessageType = (typeof MESSAGE_TYPES)[keyof typeof MESSAGE_TYPES];
@@ -114,15 +194,19 @@ export interface MoveMessage {
   timestamp: number;
 }
 
-export interface JoinMessage {
-  name?: string;
-}
+/** Joins the authenticated account associated with the room connection. */
+export interface JoinMessage {}
 
 export interface WelcomeMessage {
   sessionId: string;
   playerId: string;
+  accountId: string;
   color: Color;
   phase: GamePhase;
+}
+
+export interface AccountProfileMessage {
+  profile: AccountProfile;
 }
 
 export interface PlayerJoinedMessage {

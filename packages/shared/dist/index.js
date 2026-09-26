@@ -15,7 +15,8 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.MESSAGE_TYPES = exports.COLORS = exports.GAME_CONFIG = exports.GamePhase = exports.PlayerState = exports.PlayerRole = void 0;
+exports.MESSAGE_TYPES = exports.DEFAULT_ACCOUNT_PREFERENCES = exports.DISPLAY_NAME_MAX_LENGTH = exports.DISPLAY_NAME_MIN_LENGTH = exports.COLORS = exports.GAME_CONFIG = exports.GamePhase = exports.PlayerState = exports.PlayerRole = void 0;
+exports.validateAccountProfileUpdate = validateAccountProfileUpdate;
 var PlayerRole;
 (function (PlayerRole) {
     PlayerRole["Crewmate"] = "crewmate";
@@ -76,6 +77,52 @@ exports.COLORS = [
     "#40E0D0", // Turquoise
     "#DA70D6", // Orchid
 ];
+exports.DISPLAY_NAME_MIN_LENGTH = 1;
+exports.DISPLAY_NAME_MAX_LENGTH = 24;
+exports.DEFAULT_ACCOUNT_PREFERENCES = {
+    soundEnabled: true,
+};
+function validateAccountProfileUpdate(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return { ok: false, message: "Profile update must be an object" };
+    }
+    const update = value;
+    const result = {};
+    if ("displayName" in update) {
+        if (typeof update.displayName !== "string") {
+            return { ok: false, message: "Display name must be text" };
+        }
+        const displayName = update.displayName.trim();
+        if (displayName.length < exports.DISPLAY_NAME_MIN_LENGTH ||
+            displayName.length > exports.DISPLAY_NAME_MAX_LENGTH) {
+            return {
+                ok: false,
+                message: `Display name must be ${exports.DISPLAY_NAME_MIN_LENGTH}-${exports.DISPLAY_NAME_MAX_LENGTH} characters`,
+            };
+        }
+        result.displayName = displayName;
+    }
+    if ("preferences" in update) {
+        if (!update.preferences ||
+            typeof update.preferences !== "object" ||
+            Array.isArray(update.preferences)) {
+            return { ok: false, message: "Preferences must be an object" };
+        }
+        const preferences = update.preferences;
+        if ("soundEnabled" in preferences &&
+            typeof preferences.soundEnabled !== "boolean") {
+            return { ok: false, message: "Sound preference must be true or false" };
+        }
+        result.preferences =
+            "soundEnabled" in preferences
+                ? { soundEnabled: preferences.soundEnabled }
+                : {};
+    }
+    if (!result.displayName && !result.preferences) {
+        return { ok: false, message: "Profile update is empty" };
+    }
+    return { ok: true, value: result };
+}
 // Network message types
 exports.MESSAGE_TYPES = {
     JOIN: "join",
@@ -106,4 +153,5 @@ exports.MESSAGE_TYPES = {
     VENT_TRAVEL: "ventTravel",
     VENT_EXIT: "ventExit",
     VENT_STATE: "ventState",
+    ACCOUNT_PROFILE: "accountProfile",
 };

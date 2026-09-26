@@ -22,6 +22,7 @@ import {
   VentTravelMessage,
   VentStateMessage,
   KillMessage,
+  type AccountProfile,
   CallMeetingMessage,
   COLORS,
   STARFALL_MAP,
@@ -37,10 +38,12 @@ import {
   DesktopInputAdapter,
 } from "./input/DesktopInputAdapter";
 import { TouchInputAdapter } from "./input/TouchInputAdapter";
+import { AccountClient } from "./account/AccountClient";
 
 // Types for Colyseus room state
 interface PlayerData {
   sessionId: string;
+  accountId: string;
   name: string;
   color: Color;
   state: PlayerState;
@@ -76,6 +79,9 @@ class GameClient {
   private lobbyUI: HTMLElement;
   private joinBtn: HTMLButtonElement;
   private playerNameInput: HTMLInputElement;
+  private profileFeedback: HTMLElement;
+  private readonly accountClient = new AccountClient();
+  private accountProfile: AccountProfile | null = null;
   private playersContainer: HTMLElement;
   private playersList: HTMLElement;
   private mySessionId: string | null = null;
@@ -124,12 +130,13 @@ class GameClient {
     this.playerNameInput = document.getElementById(
       "player-name",
     ) as HTMLInputElement;
+    this.profileFeedback = document.getElementById("profile-feedback")!;
     this.playersContainer = document.getElementById("players-container")!;
     this.playersList = document.getElementById("players-list")!;
 
     this.setupCanvas();
     this.setupEventListeners();
-    this.connect();
+    void this.initializeAccount();
   }
 
   private setupCanvas() {
@@ -147,12 +154,7 @@ class GameClient {
     });
 
     this.joinBtn.addEventListener("click", () => {
-      const name = this.playerNameInput.value.trim();
-      if (name && this.room) {
-        this.room.send(MESSAGE_TYPES.JOIN, { name });
-        this.joinBtn.disabled = true;
-        this.playerNameInput.disabled = true;
-      }
+      void this.saveProfileAndJoin();
     });
 
     this.playerNameInput.addEventListener("keydown", (e) => {
@@ -171,6 +173,52 @@ class GameClient {
         console.log(`Debug mode: ${this.debugMode ? "ON" : "OFF"}`);
       }
     });
+  }
+
+  private async initializeAccount() {
+    try {
+      this.setProfileFeedback("Loading account…");
+      this.accountProfile = await this.accountClient.loadProfile();
+      this.playerNameInput.value = this.accountProfile.displayName;
+      this.joinBtn.disabled = false;
+      this.setProfileFeedback(
+        "Profile loaded. Choose a display name, then join.",
+      );
+      await this.connect();
+    } catch (error) {
+      this.setProfileFeedback(
+        error instanceof Error
+          ? error.message
+          : "Unable to initialize account.",
+      );
+      this.updateConnectionStatus("Account setup failed", "status-error");
+    }
+  }
+
+  private async saveProfileAndJoin() {
+    const displayName = this.playerNameInput.value.trim();
+    if (!displayName || !this.room) return;
+
+    this.joinBtn.disabled = true;
+    this.setProfileFeedback("Saving profile…");
+    try {
+      this.accountProfile = await this.accountClient.updateProfile({
+        displayName,
+      });
+      this.playerNameInput.value = this.accountProfile.displayName;
+      this.room.send(MESSAGE_TYPES.JOIN, {});
+      this.playerNameInput.disabled = true;
+      this.setProfileFeedback("Profile saved.");
+    } catch (error) {
+      this.joinBtn.disabled = false;
+      this.setProfileFeedback(
+        error instanceof Error ? error.message : "Unable to save profile.",
+      );
+    }
+  }
+
+  private setProfileFeedback(message: string) {
+    this.profileFeedback.textContent = message;
   }
 
   private createColorPickerUI() {
@@ -964,6 +1012,7 @@ class GameClient {
       this.updateConnectionStatus(`Error: ${message.message}`, "status-error");
       this.joinBtn.disabled = false;
       this.playerNameInput.disabled = false;
+      this.setProfileFeedback(message.message);
     });
 
     this.room.onLeave((code) => {

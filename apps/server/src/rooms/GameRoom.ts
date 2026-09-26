@@ -29,19 +29,41 @@ import {
   VentEnterMessage,
   VentTravelMessage,
   VentStateMessage,
+  type AccountProfile,
 } from "@starfall/shared";
+import type { AuthContext } from "@colyseus/core";
 import { LobbySystem } from "../systems/LobbySystem";
 import { ColorSystem } from "../systems/ColorSystem";
 import { MatchLifecycleSystem } from "../systems/MatchLifecycleSystem";
-import { RoleAssignmentSystem, DefaultRandomSource } from "../systems/RoleAssignmentSystem";
+import {
+  RoleAssignmentSystem,
+  DefaultRandomSource,
+} from "../systems/RoleAssignmentSystem";
 import { CollisionSystem } from "../systems/CollisionSystem";
 import { KillSystem, DefaultClock } from "../systems/KillSystem";
 import { VictorySystem } from "../systems/VictorySystem";
 import { MeetingSystem } from "../systems/MeetingSystem";
 import { VotingSystem } from "../systems/VotingSystem";
 import { VentSystem } from "../systems/VentSystem";
+import {
+  type AccountService,
+  LocalAccountService,
+} from "../services/AccountService";
+import { JsonFilePersistenceService } from "../services/PersistenceService";
+
+interface AuthenticatedClient extends Client {
+  auth?: AccountProfile;
+}
 
 export class GameRoom extends Room<{ state: GameRoomState }> {
+  private static accountService: AccountService = new LocalAccountService(
+    new JsonFilePersistenceService(".starfall/accounts.json"),
+  );
+
+  static configureAccountService(accountService: AccountService): void {
+    GameRoom.accountService = accountService;
+  }
+
   override maxClients = GAME_CONFIG.MAX_PLAYERS;
 
   // Fixed timestep for authoritative simulation (60 Hz)
@@ -75,8 +97,14 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
     // Initialize systems
     this.lobbySystem = new LobbySystem(this.state);
     this.colorSystem = this.lobbySystem.getColorSystem();
-    this.matchLifecycleSystem = new MatchLifecycleSystem(this.state, this.lobbySystem);
-    this.roleAssignmentSystem = new RoleAssignmentSystem(this.state, new DefaultRandomSource());
+    this.matchLifecycleSystem = new MatchLifecycleSystem(
+      this.state,
+      this.lobbySystem,
+    );
+    this.roleAssignmentSystem = new RoleAssignmentSystem(
+      this.state,
+      new DefaultRandomSource(),
+    );
     this.collisionSystem = new CollisionSystem(this.state);
     this.ventSystem = new VentSystem(this.state, this.roleAssignmentSystem);
     this.killSystem = new KillSystem(
@@ -85,9 +113,16 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
       new DefaultClock(),
       (sessionId) => this.ventSystem.isVenting(sessionId),
     );
-    this.victorySystem = new VictorySystem(this.state, this.roleAssignmentSystem);
+    this.victorySystem = new VictorySystem(
+      this.state,
+      this.roleAssignmentSystem,
+    );
     this.meetingSystem = new MeetingSystem(this.state, new DefaultClock());
-    this.votingSystem = new VotingSystem(this.state, this.roleAssignmentSystem, new DefaultClock());
+    this.votingSystem = new VotingSystem(
+      this.state,
+      this.roleAssignmentSystem,
+      new DefaultClock(),
+    );
 
     this.onMessage(MESSAGE_TYPES.JOIN, (client: Client, message: any) => {
       this.handleJoin(client, message);
@@ -118,12 +153,9 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
       },
     );
 
-    this.onMessage(
-      MESSAGE_TYPES.MATCH_START,
-      (client: Client) => {
-        this.handleMatchStart(client);
-      },
-    );
+    this.onMessage(MESSAGE_TYPES.MATCH_START, (client: Client) => {
+      this.handleMatchStart(client);
+    });
 
     this.onMessage(
       MESSAGE_TYPES.KILL,
@@ -139,16 +171,25 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
       },
     );
 
-    this.onMessage(MESSAGE_TYPES.VOTE, (client: Client, message: VoteMessage) => {
-      this.handleVote(client, message);
-    });
+    this.onMessage(
+      MESSAGE_TYPES.VOTE,
+      (client: Client, message: VoteMessage) => {
+        this.handleVote(client, message);
+      },
+    );
 
-    this.onMessage(MESSAGE_TYPES.VENT_ENTER, (client: Client, message: VentEnterMessage) => {
-      this.handleVentEnter(client, message);
-    });
-    this.onMessage(MESSAGE_TYPES.VENT_TRAVEL, (client: Client, message: VentTravelMessage) => {
-      this.handleVentTravel(client, message);
-    });
+    this.onMessage(
+      MESSAGE_TYPES.VENT_ENTER,
+      (client: Client, message: VentEnterMessage) => {
+        this.handleVentEnter(client, message);
+      },
+    );
+    this.onMessage(
+      MESSAGE_TYPES.VENT_TRAVEL,
+      (client: Client, message: VentTravelMessage) => {
+        this.handleVentTravel(client, message);
+      },
+    );
     this.onMessage(MESSAGE_TYPES.VENT_EXIT, (client: Client) => {
       this.handleVentExit(client);
     });
@@ -157,7 +198,21 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
     this.startSimulationLoop();
   }
 
-  override onJoin(client: Client, options: unknown) {
+  override async onAuth(
+    _client: Client,
+    _options: unknown,
+    context: AuthContext,
+  ): Promise<AccountProfile> {
+    const result = await GameRoom.accountService.resolveAccount(
+      readCookie(
+        context.headers.get("cookie") ?? undefined,
+        "starfall_account",
+      ),
+    );
+    return result.account;
+  }
+
+  override onJoin(client: Client, _options: unknown) {
     console.log(`Client ${client.sessionId} joined`);
   }
 
@@ -212,7 +267,11 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
 
     // Apply movement for each player based on their latest validated input
     this.state.players.forEach((player, sessionId) => {
-      if (player.state !== PlayerState.Alive || this.ventSystem.isVenting(sessionId)) return;
+      if (
+        player.state !== PlayerState.Alive ||
+        this.ventSystem.isVenting(sessionId)
+      )
+        return;
 
       const input = this.playerInputs.get(sessionId);
       if (!input) return;
@@ -226,18 +285,34 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
       let newY = player.y + direction.y * speed * deltaTime;
 
       // Validate movement with collision system
-      if (this.collisionSystem.isMovementValid(player.x, player.y, newX, newY)) {
+      if (
+        this.collisionSystem.isMovementValid(player.x, player.y, newX, newY)
+      ) {
         // Movement is valid, update position
         player.x = newX;
         player.y = newY;
       } else {
         // Movement would collide - try to slide along walls
         // Try X-only movement
-        if (this.collisionSystem.isMovementValid(player.x, player.y, newX, player.y)) {
+        if (
+          this.collisionSystem.isMovementValid(
+            player.x,
+            player.y,
+            newX,
+            player.y,
+          )
+        ) {
           player.x = newX;
         }
         // Try Y-only movement
-        if (this.collisionSystem.isMovementValid(player.x, player.y, player.x, newY)) {
+        if (
+          this.collisionSystem.isMovementValid(
+            player.x,
+            player.y,
+            player.x,
+            newY,
+          )
+        ) {
           player.y = newY;
         }
         // If neither works, position stays the same (blocked by wall)
@@ -251,9 +326,14 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
     }
   }
 
-  private handleJoin(client: Client, message: any) {
-    const playerName =
-      message?.name || `Player ${client.sessionId.slice(0, 4)}`;
+  private handleJoin(client: Client, _message: unknown) {
+    const account = (client as AuthenticatedClient).auth;
+    if (!account) {
+      client.send(MESSAGE_TYPES.ERROR, {
+        message: "Account authentication required",
+      });
+      return;
+    }
 
     // Check if player already exists
     if (this.state.players.has(client.sessionId)) {
@@ -272,7 +352,8 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
     // Handle player join through lobby system (assigns color)
     const assignedColor = this.lobbySystem.handlePlayerJoin(
       client.sessionId,
-      playerName,
+      account.id,
+      account.displayName,
     );
 
     // Set the player's position to the valid spawn point
@@ -286,6 +367,7 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
     client.send(MESSAGE_TYPES.WELCOME, {
       sessionId: client.sessionId,
       playerId: client.sessionId,
+      accountId: account.id,
       color: assignedColor,
       phase: this.state.phase,
     });
@@ -298,7 +380,7 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
       MESSAGE_TYPES.PLAYER_JOINED,
       {
         sessionId: client.sessionId,
-        name: playerName,
+        name: account.displayName,
         color: assignedColor,
       },
       { except: client },
@@ -321,7 +403,10 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
 
       // Broadcast updated lobby state to all
       if (this.lobbySystem.isInLobby()) {
-        this.broadcast(MESSAGE_TYPES.LOBBY_STATE, this.lobbySystem.getLobbyState());
+        this.broadcast(
+          MESSAGE_TYPES.LOBBY_STATE,
+          this.lobbySystem.getLobbyState(),
+        );
       }
     }
   }
@@ -334,7 +419,10 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
     }
 
     // Movement is only allowed during normal gameplay.
-    if (this.state.phase !== GamePhase.Playing || this.ventSystem.isVenting(client.sessionId)) {
+    if (
+      this.state.phase !== GamePhase.Playing ||
+      this.ventSystem.isVenting(client.sessionId)
+    ) {
       return;
     }
 
@@ -430,7 +518,10 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
 
     if (success) {
       // Broadcast updated lobby state to all clients
-      this.broadcast(MESSAGE_TYPES.LOBBY_STATE, this.lobbySystem.getLobbyState());
+      this.broadcast(
+        MESSAGE_TYPES.LOBBY_STATE,
+        this.lobbySystem.getLobbyState(),
+      );
     }
   }
 
@@ -468,7 +559,10 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
       console.error("Role assignment validation failed!");
       // Reset to lobby on failure
       this.matchLifecycleSystem.resetMatch();
-      this.broadcast(MESSAGE_TYPES.LOBBY_STATE, this.lobbySystem.getLobbyState());
+      this.broadcast(
+        MESSAGE_TYPES.LOBBY_STATE,
+        this.lobbySystem.getLobbyState(),
+      );
       return;
     }
 
@@ -484,7 +578,9 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
       const role = roleAssignments.get(sessionId);
       if (role) {
         const roleMessage: RoleAssignmentMessage = { role };
-        const targetClient = this.clients.find((c) => c.sessionId === sessionId);
+        const targetClient = this.clients.find(
+          (c) => c.sessionId === sessionId,
+        );
         if (targetClient) {
           targetClient.send(MESSAGE_TYPES.ROLE_ASSIGNMENT, roleMessage);
         }
@@ -512,10 +608,14 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
     }
 
     // Attempt the kill
-    const result = this.killSystem.attemptKill(killerSessionId, message.targetSessionId);
+    const result = this.killSystem.attemptKill(
+      killerSessionId,
+      message.targetSessionId,
+    );
 
     // Send result to the killer
-    const cooldownRemaining = this.killSystem.getCooldownRemaining(killerSessionId);
+    const cooldownRemaining =
+      this.killSystem.getCooldownRemaining(killerSessionId);
     client.send(MESSAGE_TYPES.KILL_RESULT, {
       success: result.success,
       reason: result.reason,
@@ -585,7 +685,11 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
       this.clearAllPlayerInputs();
 
       // Get meeting positions for all living players
-      const meetingPositions: Array<{ sessionId: string; x: number; y: number }> = [];
+      const meetingPositions: Array<{
+        sessionId: string;
+        x: number;
+        y: number;
+      }> = [];
       this.state.players.forEach((player, sessionId) => {
         if (player.state === PlayerState.Alive) {
           meetingPositions.push({
@@ -609,7 +713,10 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
   }
 
   private handleMeetingEnded() {
-    if (!this.matchLifecycleSystem.startVoting() || !this.votingSystem.startVoting()) {
+    if (
+      !this.matchLifecycleSystem.startVoting() ||
+      !this.votingSystem.startVoting()
+    ) {
       return;
     }
 
@@ -625,7 +732,10 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
 
   private handleVentEnter(client: Client, message: VentEnterMessage) {
     if (!message || typeof message.nodeId !== "string") {
-      this.sendVentState(client, { success: false, reason: "Vent node must be a string" });
+      this.sendVentState(client, {
+        success: false,
+        reason: "Vent node must be a string",
+      });
       return;
     }
 
@@ -636,11 +746,17 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
 
   private handleVentTravel(client: Client, message: VentTravelMessage) {
     if (!message || typeof message.destinationNodeId !== "string") {
-      this.sendVentState(client, { success: false, reason: "Vent destination must be a string" });
+      this.sendVentState(client, {
+        success: false,
+        reason: "Vent destination must be a string",
+      });
       return;
     }
 
-    this.sendVentState(client, this.ventSystem.travel(client.sessionId, message.destinationNodeId));
+    this.sendVentState(
+      client,
+      this.ventSystem.travel(client.sessionId, message.destinationNodeId),
+    );
   }
 
   private handleVentExit(client: Client) {
@@ -649,7 +765,10 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
     this.sendVentState(client, result);
   }
 
-  private sendVentState(client: Client, result: { success: boolean; reason?: string }) {
+  private sendVentState(
+    client: Client,
+    result: { success: boolean; reason?: string },
+  ) {
     const message: VentStateMessage = {
       success: result.success,
       reason: result.reason,
@@ -670,11 +789,16 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
       return;
     }
 
-    const result = this.votingSystem.submitVote(client.sessionId, targetSessionId);
+    const result = this.votingSystem.submitVote(
+      client.sessionId,
+      targetSessionId,
+    );
     client.send(MESSAGE_TYPES.VOTE_SUBMITTED, result as VoteSubmittedMessage);
   }
 
-  private handleVoteResolution(resolution: import("../systems/VotingSystem").VoteResolution) {
+  private handleVoteResolution(
+    resolution: import("../systems/VotingSystem").VoteResolution,
+  ) {
     if (!this.matchLifecycleSystem.startVoteResolution()) {
       return;
     }
@@ -718,4 +842,16 @@ export class GameRoom extends Room<{ state: GameRoomState }> {
       }
     });
   }
+}
+
+function readCookie(
+  cookieHeader: string | undefined,
+  name: string,
+): string | undefined {
+  if (!cookieHeader) return undefined;
+  return cookieHeader
+    .split(";")
+    .map((entry) => entry.trim())
+    .find((entry) => entry.startsWith(`${name}=`))
+    ?.slice(name.length + 1);
 }
